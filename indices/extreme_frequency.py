@@ -21,7 +21,7 @@ JAKARTA_FLOOD_THRESHOLDS = {
 }
 
 
-# ── L-moments ─────────────────────────────────────────────────────────────────
+# L-moments ====================
 
 def lmoments(x: np.ndarray) -> tuple:
     """
@@ -51,7 +51,7 @@ def lmoments(x: np.ndarray) -> tuple:
     return l1, l2, l3, l4
 
 
-# ── GEV Fitting ───────────────────────────────────────────────────────────────
+# GEV Fitting ====================
 
 def fit_gev_lmoments(ams: np.ndarray) -> dict:
     l1, l2, l3, l4 = lmoments(ams)
@@ -137,7 +137,7 @@ def bootstrap_return_levels(
     return ci_results
 
 
-# ── Threshold Exceedance ───────────────────────────────────────────────────────
+# Threshold Exceedance ====================
 
 def exceedance_probability(
     loc: float, scale: float, shape: float,
@@ -251,7 +251,7 @@ def spatial_frequency_analysis(
     })
 
 
-# ── CLI ────────────────────────────────────────────────────────────────────────
+# CLI ====================
 
 @click.command()
 @click.option("--indices-dir", default="results/indices", show_default=True)
