@@ -249,9 +249,7 @@ def compute_water_stress_months(
     pet_monthly: xr.DataArray,
     threshold: float = 0.5,
 ) -> xr.DataArray:
-    """Annual count of months where P < threshold × PET."""
     stressed     = (pr_monthly < threshold * pet_monthly).astype(float)
-    # Align time coords so we can group by year
     years        = _get_years(stressed)
     unique_years = np.unique(years)
     import pandas as pd
@@ -273,7 +271,7 @@ def compute_all_water_stress(
     tmin_daily: xr.DataArray,
 ) -> xr.Dataset:
     lat_vals = pr_daily.lat.values
-    doy      = _get_doy(pr_daily)      # cftime-safe day-of-year
+    doy      = _get_doy(pr_daily)
 
     logger.info("  Computing PET (Hargreaves-Samani)...")
     pet_daily = hargreaves_pet(tmax_daily, tmin_daily, lat_vals, doy)
@@ -428,22 +426,17 @@ def main(bc_dir, processed_dir, output_dir, scenario, method):
                 tmin = tmin - 273.15
                 tmax.attrs["units"] = "degC"
                 tmin.attrs["units"] = "degC"
-
-            # Align time axis to match pr (in case periods differ)
-            pr_times   = set(pr.time.values.tolist())
-            tmax_times = set(tmax.time.values.tolist())
-            common     = sorted(pr_times & tmax_times)
-            if len(common) == 0:
+            try:
+                pr, tmax, tmin = xr.align(pr, tmax, tmin, join="inner", copy=False)
+                if len(pr.time) == 0:
+                    raise ValueError("No overlapping time steps after alignment.")
+                logger.info(f"  Aligned to {len(pr.time):,} common time steps")
+            except Exception as align_err:
                 logger.warning(
-                    "  No overlapping time steps between pr and tasmax/tasmin. "
+                    f"  Time alignment failed ({align_err}). "
                     "Falling back to climatological temperature range."
                 )
                 tmax_path = None
-            else:
-                tmax = tmax.sel(time=list(common))
-                tmin = tmin.sel(time=list(common))
-                pr   = pr.sel(time=list(common))
-                logger.info(f"  Aligned to {len(common):,} common time steps")
 
         if not tmax_path or not tmin_path:
             # Fallback: climatological Tmax/Tmin for Jakarta
@@ -457,7 +450,6 @@ def main(bc_dir, processed_dir, output_dir, scenario, method):
             tmax.attrs["units"] = "degC"
             tmin.attrs["units"] = "degC"
 
-        # Compute water stress metrics
         try:
             ds_out = compute_all_water_stress(pr, tmax, tmin)
             ds_out.attrs["scenario"] = scen
