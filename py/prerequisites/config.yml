@@ -31,16 +31,17 @@ scenarios:
   - rcp85
 
 scenario_labels:
+  # Labels use CMIP5 canonical scenario names (W/m² radiative forcing by 2100)
   historical: "Historical (1976–2005)"
-  rcp26: "RCP 2.6 (low emission)"
-  rcp45: "RCP 4.5 (intermediate)"
-  rcp85: "RCP 8.5 (high emission)"
+  rcp26: "RCP 2.6 (low emission, +2.6 W/m²)"
+  rcp45: "RCP 4.5 (intermediate emission, +4.5 W/m²)"
+  rcp85: "RCP 8.5 (high emission, +8.5 W/m²)"
 
 scenario_colors:
-  historical: "#555555"
-  rcp26: "#2166AC"
-  rcp45: "#4DAF4A"
-  rcp85: "#D73027"
+  historical: "#676767"
+  rcp26: "#2364a5"
+  rcp45: "#37b133"
+  rcp85: "#b02c25"
 
 precipitation:
   wet_day_threshold: 1.0   # mm/day
