@@ -1,0 +1,108 @@
+project:
+  name: "Jakarta Rainfall ErosiviAnalysis"
+  model: "HadGEM2-AO"
+  institution: "MOHC/NIMR-KMA"
+
+domain:
+  name: "Greater Capital Region of Jakarta (Jabodetabek)"
+  lat_min: -7.0
+  lat_max: -5.5
+  lon_min: 106.0
+  lon_max: 107.5
+  # Jakarta city center (for point analysis)
+  jakarta_lat: -6.211
+  jakarta_lon: 106.845
+
+periods:
+  historical:
+    start: 1976
+    end: 2005
+  near_future:
+    start: 2021
+    end: 2050
+  far_future:
+    start: 2071
+    end: 2100
+
+scenarios:
+  - historical
+  - rcp26
+  - rcp45
+  - rcp85
+
+scenario_labels:
+  historical: "Historical (1976–2005)"
+  rcp26: "RCP 2.6 (low emission)"
+  rcp45: "RCP 4.5 (intermediate)"
+  rcp85: "RCP 8.5 (high emission)"
+
+scenario_colors:
+  historical: "#555555"
+  rcp26: "#2166AC"
+  rcp45: "#4DAF4A"
+  rcp85: "#D73027"
+
+precipitation:
+  wet_day_threshold: 1.0   # mm/day
+  units_raw: "kg m-2 s-1"
+  units_processed: "mm/day"
+  conversion_factor: 86400.0
+
+indices:
+  - PRCPTOT
+  - Rx1day
+  - Rx3day
+  - Rx5day
+  - WDF
+  - SDII
+
+bias_correction:
+  method: "empirical"
+  n_quantiles: 100
+  reference_obs: "CHIRPS v2.0"
+  calibration_period:
+    start: 1981
+    end: 2005
+
+extreme_frequency:
+  distribution: "GEV"
+  parameter_estimation: "MLE"
+  return_periods: [2, 5, 10, 25, 50, 100]
+  n_bootstrap: 1000
+  confidence_interval: 0.95
+  flood_thresholds:
+    moderate_flood: 100.0    # mm/day
+    severe_flood: 150.0
+    extreme_flood: 200.0
+
+machine_learning:
+  model: "RandomForestRegressor"
+  features:
+    - PRCPTOT
+    - Rx1day
+    - Rx3day
+    - Rx5day
+    - WDF
+    - SDII
+  target: R_factor
+  cv_folds: 5
+  random_state: 42
+  hyperparameters:
+    n_estimators: 300
+    max_depth: 12
+    min_samples_split: 5
+    min_samples_leaf: 3
+    max_features: sqrt
+    bootstrap: true
+    oob_score: true
+
+paths:
+  data_raw: "esgf"
+  data_processed: "esgf/processed"
+  data_bias_corrected: "esgf/bias_corrected"
+  results_indices: "results/indices"
+  results_figures: "results/figures"
+  results_tables: "results/tables"
+  results_models: "results/models"
+  results_extreme: "results/extreme_freq"
+  results_water_stress: "results/water_stress"
