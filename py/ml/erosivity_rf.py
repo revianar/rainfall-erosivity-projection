@@ -45,20 +45,18 @@ Methods
 
 Outputs (results/models/ and results/figures/)
 ==================================================
-  HadGEM2-AO_rf_erosivity_model.pkl       - trained RF model
-  HadGEM2-AO_rf_metrics.csv               - RMSE, MAE, R² (CV + holdout)
-  HadGEM2-AO_rf_predictions.csv           - year-by-year R predictions
-  fig_feature_importance.png              - permutation + impurity importance
-  fig_observed_vs_predicted.png           - CV predicted vs. target scatter
-  fig_residuals.png                       - residual diagnostics (2-panel)
-  fig_scenario_projection.png             - historical + RCP time series
+HadGEM2-AO_rf_erosivity_model.pkl       - trained RF model
+HadGEM2-AO_rf_metrics.csv               - RMSE, MAE, R² (CV + holdout)
+HadGEM2-AO_rf_predictions.csv           - year-by-year R predictions
+fig_feature_importance.png              - permutation + impurity importance
+fig_observed_vs_predicted.png           - CV predicted vs. target scatter
+fig_residuals.png                       - residual diagnostics (2-panel)
+fig_scenario_projection.png             - historical + RCP time series
 
 References
 =====================
-Arnoldus, H.M.J. (1980). An approximation of the rainfall factor in the USLE.
-  In: Assessment of Erosion (ed. De Boodt & Gabriels), Wiley, 127–132.
-Diodato, N. and Bellocchi, G. (2007). Estimating monthly (R)USLE climate input
-  in a Mediterranean region using limited data. J. Hydrol. 345, 224–236.
+Arnoldus, H.M.J. (1980). An approximation of the rainfall factor in the USLE. In: Assessment of Erosion (ed. De Boodt & Gabriels), Wiley, 127–132.
+Diodato, N. and Bellocchi, G. (2007). Estimating monthly (R)USLE climate input in a Mediterranean region using limited data. J. Hydrol. 345, 224–236.
 """
 
 import sys
