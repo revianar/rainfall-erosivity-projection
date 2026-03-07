@@ -536,7 +536,8 @@ def prepare(chirps_dir, processed_dir, output_dir, chirps_start, chirps_end):
         f"\nRun bias correction with:\n"
         f"  python quantile_mapping.py apply --scenario rcp26\n"
         f"  python quantile_mapping.py apply --scenario rcp45\n"
-        f"  python quantile_mapping.py apply --scenario rcp85"
+        f"  python quantile_mapping.py apply --scenario rcp85\n"
+        f"  python quantile_mapping.py apply --scenario all"
     )
 
 
