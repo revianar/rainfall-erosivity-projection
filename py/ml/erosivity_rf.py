@@ -43,16 +43,16 @@ Methods
 
 Outputs (results/models/ and results/figures/)
 ==================================================
-  HadGEM2-AO_rf_erosivity_model.pkl       — trained RF model
-  HadGEM2-AO_rf_metrics.csv               — RMSE, MAE, R² (CV + holdout)
-  HadGEM2-AO_rf_predictions.csv           — year-by-year R predictions
-  fig_feature_importance.png              — permutation + impurity importance
-  fig_observed_vs_predicted.png           — CV predicted vs. target scatter
-  fig_residuals.png                       — residual diagnostics (2-panel)
-  fig_scenario_projection.png             — historical + RCP time series
+  HadGEM2-AO_rf_erosivity_model.pkl       - trained RF model
+  HadGEM2-AO_rf_metrics.csv               - RMSE, MAE, R² (CV + holdout)
+  HadGEM2-AO_rf_predictions.csv           - year-by-year R predictions
+  fig_feature_importance.png              - permutation + impurity importance
+  fig_observed_vs_predicted.png           - CV predicted vs. target scatter
+  fig_residuals.png                       - residual diagnostics (2-panel)
+  fig_scenario_projection.png             - historical + RCP time series
 
 References
-----------
+=====================
 Arnoldus, H.M.J. (1980). An approximation of the rainfall factor in the USLE.
   In: Assessment of Erosion (ed. De Boodt & Gabriels), Wiley, 127–132.
 Diodato, N. and Bellocchi, G. (2007). Estimating monthly (R)USLE climate input
@@ -171,7 +171,7 @@ def load_scenario_indices(indices_dir: Path, scenario: str) -> pd.DataFrame | No
     fpath = indices_dir / fname
 
     if not fpath.exists():
-        logger.warning(f"  File not found: {fname} — skipping {scenario}")
+        logger.warning(f"  File not found: {fname} - skipping {scenario}")
         return None
 
     logger.info(f"  Loading: {fname}")
@@ -190,7 +190,7 @@ def load_scenario_indices(indices_dir: Path, scenario: str) -> pd.DataFrame | No
         row = {"year": yr, "scenario": scenario}
         for var in FEATURES:
             da = ds[var].isel(year=i)
-            # Spatial mean — works whether the array is 2D (lat×lon) or scalar
+            # Spatial mean
             val = float(da.values.mean()) if da.ndim > 0 else float(da.values)
             row[var] = val
         rows.append(row)
@@ -313,46 +313,73 @@ def _add_metrics_box(ax, rmse, mae, r2):
     )
 
 
-# ===== Figure 1: Feature Importance ====================
+# ── Figure 1: Feature Importance ─────────────────────────────────────────────
 
 def plot_feature_importance(metrics: dict, fig_dir: Path) -> Path:
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle(
         f"{MODEL}  |  Random Forest Feature Importance\nTarget: Rainfall Erosivity R-factor proxy",
-        fontsize=FONT_BASE + 1, fontweight="bold", y=1.01,
+        fontsize=FONT_BASE + 1, fontweight="bold",
     )
 
     colors = plt.cm.RdYlBu_r(np.linspace(0.2, 0.85, len(FEATURES)))
 
-    # Left: Permutation importance
+    def _label_bars(ax, bars, vals, errs=None):
+        """Place value labels cleanly to the right of the bar + error cap."""
+        x_max = ax.get_xlim()[1]
+        for bar, v, err in zip(bars, vals, errs if errs is not None else [0] * len(vals)):
+            # Anchor label just past the error cap, with a small fixed padding
+            x_anchor = v + (err if err else 0) + x_max * 0.02
+            ax.text(
+                x_anchor,
+                bar.get_y() + bar.get_height() / 2,
+                f"{v:.3f}",
+                va="center", ha="left",
+                fontsize=FONT_BASE - 2,
+                color="#333333",
+            )
+        # Expand x-axis limit to ensure labels don't get clipped
+        ax.set_xlim(right=x_max * 1.18)
+
+    # ── Left: Permutation importance ──
     ax = axes[0]
-    idx = np.argsort(metrics["perm_importances"])
+    idx  = np.argsort(metrics["perm_importances"])
     vals = metrics["perm_importances"][idx]
     errs = metrics["perm_importances_std"][idx]
     feats = [FEATURES[i] for i in idx]
-    bars = ax.barh(feats, vals, xerr=errs, color=colors[idx],
-        edgecolor="white", linewidth=0.6, capsize=4, height=0.6)
-    ax.set_xlabel("Mean decrease in R² (permutation)")
-    ax.set_title("Permutation Importance", fontweight="bold")
-    ax.axvline(0, color="#ababab", lw=0.8, ls="--")
-    for bar, v in zip(bars, vals):
-        ax.text(max(v, 0) + 0.001, bar.get_y() + bar.get_height() / 2,
-            f"{v:.3f}", va="center", fontsize=FONT_BASE - 2)
 
-    # Right: Impurity (MDI) importance
+    bars = ax.barh(
+        feats, vals, xerr=errs,
+        color=colors[idx], edgecolor="white", linewidth=0.5,
+        capsize=3, height=0.55,
+        error_kw={"elinewidth": 1.2, "ecolor": "#555555", "capthick": 1.2},
+    )
+    ax.set_xlabel("Mean decrease in R² (permutation)")
+    ax.set_title("Permutation Importance", fontweight="bold", pad=10)
+    ax.axvline(0, color="#cccccc", lw=0.8, ls="--")
+    ax.set_xlim(left=-0.01)
+    ax.tick_params(axis="y", labelsize=FONT_BASE - 1)
+    # Draw labels after autoscaling so x_max is correct
+    ax.autoscale(axis="x")
+    _label_bars(ax, bars, vals, errs)
+
+    # ── Right: Impurity (MDI) importance ──
     ax = axes[1]
-    idx2 = np.argsort(metrics["impurity_importances"])
+    idx2  = np.argsort(metrics["impurity_importances"])
     vals2 = metrics["impurity_importances"][idx2]
     feats2 = [FEATURES[i] for i in idx2]
-    bars2 = ax.barh(feats2, vals2, color=colors[idx2],
-        edgecolor="white", linewidth=0.6, height=0.6)
-    ax.set_xlabel("Mean decrease in impurity (MDI)")
-    ax.set_title("Impurity-Based Importance (MDI)", fontweight="bold")
-    for bar, v in zip(bars2, vals2):
-        ax.text(v + 0.002, bar.get_y() + bar.get_height() / 2,
-            f"{v:.3f}", va="center", fontsize=FONT_BASE - 2)
 
-    fig.tight_layout()
+    bars2 = ax.barh(
+        feats2, vals2,
+        color=colors[idx2], edgecolor="white", linewidth=0.5, height=0.55,
+    )
+    ax.set_xlabel("Mean decrease in impurity (MDI)")
+    ax.set_title("Impurity-Based Importance (MDI)", fontweight="bold", pad=10)
+    ax.tick_params(axis="y", labelsize=FONT_BASE - 1)
+    ax.autoscale(axis="x")
+    _label_bars(ax, bars2, vals2)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     out = fig_dir / f"{MODEL}_fig_feature_importance.png"
     fig.savefig(out, dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
@@ -360,7 +387,7 @@ def plot_feature_importance(metrics: dict, fig_dir: Path) -> Path:
     return out
 
 
-# ===== Figure 2: Observed vs. Predicted (CV) ====================
+# ── Figure 2: Observed vs. Predicted (CV) ────────────────────────────────────
 
 def plot_observed_vs_predicted(
     df_hist: pd.DataFrame,
@@ -421,7 +448,7 @@ def plot_observed_vs_predicted(
     return out
 
 
-# ===== Figure 3: Residual Diagnostics ====================
+# ── Figure 3: Residual Diagnostics ───────────────────────────────────────────
 
 def plot_residuals(
     df_hist: pd.DataFrame,
@@ -436,7 +463,7 @@ def plot_residuals(
     fig = plt.figure(figsize=(12, 5))
     gs  = gridspec.GridSpec(1, 3, figure=fig, wspace=0.38)
 
-    # Panel A: Residuals vs. fitted
+    # ── Panel A: Residuals vs. fitted ──
     ax1 = fig.add_subplot(gs[0])
     ax1.scatter(cv_preds, residuals, c=years, cmap="plasma",
         s=45, edgecolors="white", linewidths=0.4, zorder=3)
@@ -451,7 +478,7 @@ def plot_residuals(
     ax1.set_title("Residuals vs. Fitted", fontweight="bold")
     ax1.legend(fontsize=FONT_BASE - 2)
 
-    # Panel B: Residuals over time
+    # ── Panel B: Residuals over time ──
     ax2 = fig.add_subplot(gs[1])
     ax2.bar(years, residuals,
         color=np.where(residuals >= 0, "#2364a5", "#D73027"),
@@ -467,7 +494,7 @@ def plot_residuals(
         markersize=8, label="Under-predicted")
     ax2.legend(handles=[overbar, underbar], fontsize=FONT_BASE - 2)
 
-    # Panel C: Residual distribution (histogram + KDE)
+    # ── Panel C: Residual distribution (histogram + KDE) ──
     ax3 = fig.add_subplot(gs[2])
     from scipy.stats import norm as scipy_norm
     ax3.hist(residuals, bins=min(15, len(residuals) // 3),
@@ -545,7 +572,7 @@ def plot_scenario_projection(
 
     ax.set_ylabel("R-factor proxy  [MJ mm ha⁻¹ h⁻¹ yr⁻¹]")
     ax.set_title(
-        f"{MODEL} HadGEM2-AO  |  Projected Rainfall Erosivity — Jakarta\n"
+        f"{MODEL} HadGEM2-AO  |  Projected Rainfall Erosivity - Jakarta\n"
         "Random Forest prediction  |  10-yr rolling mean ± 1σ",
         fontweight="bold",
     )
@@ -561,7 +588,7 @@ def plot_scenario_projection(
             color="#696969",
             bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="#cccccc", alpha=0.85))
 
-    # Bottom panel: anomaly relative to historical mean
+    # ── Bottom panel: anomaly relative to historical mean ──
     ax2 = axes[1]
     hist_mean = df_predictions.loc[
         df_predictions["scenario"] == "historical", "R_proxy_predicted"
@@ -630,7 +657,9 @@ def save_metrics(metrics: dict, out_dir: Path) -> Path:
     return out
 
 
-# ===== CLI ====================
+# ===========================================================================
+# CLI
+# ===========================================================================
 
 @click.command()
 @click.option(
@@ -689,6 +718,10 @@ def save_metrics(metrics: dict, out_dir: Path) -> Path:
 )
 def main(indices_dir, extreme_dir, water_stress_dir, output_dir, fig_dir,
          n_estimators, max_depth, cv_folds, random_state):
+    """
+    Train a Random Forest to predict rainfall erosivity (R-factor proxy)
+    from CMIP5 precipitation indices and project it across RCP scenarios.
+    """
     indices_path      = Path(indices_dir)
     extreme_path      = Path(extreme_dir)
     water_stress_path = Path(water_stress_dir)
@@ -702,7 +735,6 @@ def main(indices_dir, extreme_dir, water_stress_dir, output_dir, fig_dir,
         logger.error(f"Indices directory not found: {indices_path}")
         logger.error("Run precipitation_indices.py --scenario all first.")
         sys.exit(1)
-
     for label, path, upstream_script in [
         ("extreme_freq",  extreme_path,      "extreme_frequency.py --scenario all"),
         ("water_stress",  water_stress_path,  "water_stress.py --scenario all"),
@@ -760,7 +792,7 @@ def main(indices_dir, extreme_dir, water_stress_dir, output_dir, fig_dir,
     ):
         logger.info(f"    {feat:<10}: {imp:.4f}  ±{std:.4f}")
 
-    # ── Predict all scenarios ──
+    # Predict all scenarios
     logger.info("=" * 55)
     logger.info("STEP 3: Predicting all scenarios")
     logger.info("=" * 55)
@@ -807,7 +839,7 @@ def main(indices_dir, extreme_dir, water_stress_dir, output_dir, fig_dir,
     plot_scenario_projection(df_predictions, metrics, fig_path)
 
     # Final summary
-    logger.info("=" * 55)
+    logger.info("\n" + "=" * 55)
     logger.info("DONE")
     logger.info("=" * 55)
     logger.info(f"  Model     : {model_path.name}")
