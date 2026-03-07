@@ -249,7 +249,7 @@ def main(input_dir: str, output_dir: str, scenario: str, method: str):
             continue
 
         logger.info(f"  Loading: {fname}")
-        ds = xr.open_dataset(fpath, use_cftime=True)
+        ds = xr.open_dataset(fpath, decode_times=xr.coders.CFDatetimeCoder(use_cftime=True))
 
         # Determine precipitation variable name
         if "pr" in ds:
