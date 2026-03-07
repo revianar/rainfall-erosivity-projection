@@ -2,7 +2,6 @@ import sys
 import xarray as xr
 import numpy as np
 import pandas as pd
-from xarray.coding.times import CFDatetimeCoder
 from pathlib import Path
 import click
 import logging
@@ -250,7 +249,7 @@ def main(input_dir: str, output_dir: str, scenario: str, method: str):
             continue
 
         logger.info(f"  Loading: {fname}")
-        ds = xr.open_dataset(fpath, decode_times=CFDatetimeCoder(use_cftime=True))
+        ds = xr.open_dataset(fpath, use_cftime=True)
 
         # Determine precipitation variable name
         if "pr" in ds:
