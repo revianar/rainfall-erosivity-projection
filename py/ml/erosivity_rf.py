@@ -7,7 +7,7 @@ Random Forest model for predicting rainfall erosivity (R-factor) over the Specia
 
 R-factor proxy
 ====================
-The Modified Fournier Index (MFI) is used as the R-factor proxy because it requires only monthly/annual totals (no sub-daily data):
+The MFI is used as the R-factor proxy because it requires only monthly/annual totals (no sub-daily data):
 
     MFI = sum_{m=1}^{12} (p_m^2 / P)
 
