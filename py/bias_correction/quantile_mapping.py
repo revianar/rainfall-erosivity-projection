@@ -541,7 +541,7 @@ def prepare(chirps_dir, processed_dir, output_dir, chirps_start, chirps_end):
     )
 
 
-# ===== Apply: core logic ──────
+# ===== Apply: core logic ====================
 
 def _run_one_scenario(
     scenario: str,
