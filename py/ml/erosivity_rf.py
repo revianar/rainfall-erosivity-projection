@@ -1,6 +1,8 @@
 """
-rainfall_erosivity_ml.py
-==============================
+Disclaimer: The R-factor is based on the Modifier Fournier Index (MFI) with modified parameters for fitting purposes with the target geography (Jakarta)
+
+Random Forest
+====================
 Random Forest model for predicting rainfall erosivity (R-factor) over the Special Capital Region of Jakarta using CMIP5 HadGEM2-AO precipitation indices.
 
 R-factor proxy
@@ -14,22 +16,22 @@ where p_m is the mean monthly precipitation [mm] and P is the mean annual precip
 We scale MFI to approximate RUSLE R-factor units (MJ mm ha⁻¹ h⁻¹ yr⁻¹) via the empirical relationship
 from Diodato & Bellocchi (2007) calibrated for tropical/monsoonal climates:
 
-    R ≈ 0.739 × MFI^1.847                       [equation (1)]
+    R ≈ 0.739 × MFI^1.847                           [equation (1)]
 
 Because the indices NetCDF files store annual values (not monthly breakdowns),
 we approximate MFI from the available annual indices using:
 
     MFI_proxy = (Rx1day / PRCPTOT) × PRCPTOT × k
 
-where k = 12.0 is a distributional scaling constant that converts the ratio of
-the single-wettest-day fraction to a monthly concentration proxy.  Concretely:
+where k = 12.0 is a distributional scaling constant that converts the ratio of the single-wettest-day fraction to a monthly concentration proxy. 
+
+Next:
 
     R_proxy = α × PRCPTOT × (Rx1day / PRCPTOT)^β
-            = α × PRCPTOT^(1-β) × Rx1day^β       [equation (2)]
+            = α × PRCPTOT^(1-β) × Rx1day^β           [equation (2)]
 
 with α = 0.0483, β = 1.61  (fitted to the Diodato & Bellocchi tropical curve).
-This produces R values in the correct physical range (~500–3000 MJ mm ha⁻¹ h⁻¹ yr⁻¹)
-for tropical Jakarta and is fully reproducible from the existing index files.
+This produces R values in the correct physical range (~500–3000 MJ mm ha⁻¹ h⁻¹ yr⁻¹) for tropical Jakarta and is fully reproducible from the existing index files.
 
 Methods
 ====================
