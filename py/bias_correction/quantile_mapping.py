@@ -153,8 +153,15 @@ def apply_bias_correction_spatial(
     method: Literal["empirical", "parametric"] = "empirical",
     pr_var: str = "pr",
 ) -> xr.DataArray:
-    obs_pr    = obs_ds[pr_var].values
-    hist_pr   = hist_ds[pr_var].values
+    # Regrid obs (CHIRPS 0.25°) and hist to the model grid using nearest-neighbour.
+    # (The reason is because there were lots of NaNs after interpolation. 😭) 
+    model_lat = future_ds[pr_var].lat
+    model_lon = future_ds[pr_var].lon
+    obs_regrid  = obs_ds[pr_var].interp(lat=model_lat, lon=model_lon, method="nearest")
+    hist_regrid = hist_ds[pr_var].interp(lat=model_lat, lon=model_lon, method="nearest")
+
+    obs_pr    = obs_regrid.values
+    hist_pr   = hist_regrid.values
     future_pr = future_ds[pr_var].values
 
     corrected  = np.full_like(future_pr, np.nan)
