@@ -1,35 +1,37 @@
 """
-rainfall_erosivity_ml.py
-==============================
+Disclaimer: The R-factor is based on the Modifier Fournier Index (MFI) with modified parameters for fitting purposes with the target geography (Jakarta)
+
+Random Forest
+====================
 Random Forest model for predicting rainfall erosivity (R-factor) over the Special Capital Region of Jakarta using CMIP5 HadGEM2-AO precipitation indices.
 
 R-factor proxy
 ====================
-The Modified Fournier Index (MFI) is used as the R-factor proxy because it requires only monthly/annual totals (no sub-daily data):
+The MFI is used as the R-factor proxy because it requires only monthly/annual totals (no sub-daily data):
 
     MFI = sum_{m=1}^{12} (p_m^2 / P)
 
-where p_m is the mean monthly precipitation [mm] and P is the mean annual precipitation [mm] (Arnoldus, 1980). 
+where p_m is the mean monthly precipitation (mm) and P is the mean annual precipitation (mm) (Arnoldus, 1980). 
 
 We scale MFI to approximate RUSLE R-factor units (MJ mm ha⁻¹ h⁻¹ yr⁻¹) via the empirical relationship
 from Diodato & Bellocchi (2007) calibrated for tropical/monsoonal climates:
 
-    R ≈ 0.739 × MFI^1.847                       [equation (1)]
+    R ≈ 0.739 × MFI^1.847                           (equation 1)
 
 Because the indices NetCDF files store annual values (not monthly breakdowns),
 we approximate MFI from the available annual indices using:
 
     MFI_proxy = (Rx1day / PRCPTOT) × PRCPTOT × k
 
-where k = 12.0 is a distributional scaling constant that converts the ratio of
-the single-wettest-day fraction to a monthly concentration proxy.  Concretely:
+where k = 12.0 is a distributional scaling constant that converts the ratio of the single-wettest-day fraction to a monthly concentration proxy. 
+
+Next:
 
     R_proxy = α × PRCPTOT × (Rx1day / PRCPTOT)^β
-            = α × PRCPTOT^(1-β) × Rx1day^β       [equation (2)]
+            = α × PRCPTOT^(1-β) × Rx1day^β           (equation 2)
 
 with α = 0.0483, β = 1.61  (fitted to the Diodato & Bellocchi tropical curve).
-This produces R values in the correct physical range (~500–3000 MJ mm ha⁻¹ h⁻¹ yr⁻¹)
-for tropical Jakarta and is fully reproducible from the existing index files.
+This produces R values in the correct physical range (~500–3000 MJ mm ha⁻¹ h⁻¹ yr⁻¹) for tropical Jakarta and is fully reproducible from the existing index files.
 
 Methods
 ====================
@@ -43,20 +45,18 @@ Methods
 
 Outputs (results/models/ and results/figures/)
 ==================================================
-  HadGEM2-AO_rf_erosivity_model.pkl       - trained RF model
-  HadGEM2-AO_rf_metrics.csv               - RMSE, MAE, R² (CV + holdout)
-  HadGEM2-AO_rf_predictions.csv           - year-by-year R predictions
-  fig_feature_importance.png              - permutation + impurity importance
-  fig_observed_vs_predicted.png           - CV predicted vs. target scatter
-  fig_residuals.png                       - residual diagnostics (2-panel)
-  fig_scenario_projection.png             - historical + RCP time series
+HadGEM2-AO_rf_erosivity_model.pkl       - trained RF model
+HadGEM2-AO_rf_metrics.csv               - RMSE, MAE, R² (CV + holdout)
+HadGEM2-AO_rf_predictions.csv           - year-by-year R predictions
+fig_feature_importance.png              - permutation + impurity importance
+fig_observed_vs_predicted.png           - CV predicted vs. target scatter
+fig_residuals.png                       - residual diagnostics (2-panel)
+fig_scenario_projection.png             - historical + RCP time series
 
 References
 =====================
-Arnoldus, H.M.J. (1980). An approximation of the rainfall factor in the USLE.
-  In: Assessment of Erosion (ed. De Boodt & Gabriels), Wiley, 127–132.
-Diodato, N. and Bellocchi, G. (2007). Estimating monthly (R)USLE climate input
-  in a Mediterranean region using limited data. J. Hydrol. 345, 224–236.
+Arnoldus, H.M.J. (1980). An approximation of the rainfall factor in the USLE. In: Assessment of Erosion (ed. De Boodt & Gabriels), Wiley, 127–132.
+Diodato, N. and Bellocchi, G. (2007). Estimating monthly (R)USLE climate input in a Mediterranean region using limited data. J. Hydrol. 345, 224–236.
 """
 
 import sys
@@ -140,14 +140,7 @@ def compute_r_proxy(prcptot: np.ndarray, rx1day: np.ndarray) -> np.ndarray:
 
     R_proxy = α × PRCPTOT^(1 - β) × Rx1day^β
 
-    Parameters
-    ----------
-    prcptot : annual total wet-day precipitation [mm/yr]
-    rx1day  : annual maximum 1-day precipitation  [mm]
-
-    Returns
-    -------
-    R_proxy in approximate RUSLE units [MJ mm ha⁻¹ h⁻¹ yr⁻¹]
+    It will return as R_proxy in approximate RUSLE units (MJ mm ha⁻¹ h⁻¹ yr⁻¹)
     """
     prcptot = np.asarray(prcptot, dtype=float)
     rx1day  = np.asarray(rx1day,  dtype=float)
@@ -313,7 +306,7 @@ def _add_metrics_box(ax, rmse, mae, r2):
     )
 
 
-# ── Figure 1: Feature Importance ─────────────────────────────────────────────
+# ===== Figure 1: Feature Importance ====================
 
 def plot_feature_importance(metrics: dict, fig_dir: Path) -> Path:
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
@@ -325,7 +318,6 @@ def plot_feature_importance(metrics: dict, fig_dir: Path) -> Path:
     colors = plt.cm.RdYlBu_r(np.linspace(0.2, 0.85, len(FEATURES)))
 
     def _label_bars(ax, bars, vals, errs=None):
-        """Place value labels cleanly to the right of the bar + error cap."""
         x_max = ax.get_xlim()[1]
         for bar, v, err in zip(bars, vals, errs if errs is not None else [0] * len(vals)):
             # Anchor label just past the error cap, with a small fixed padding
@@ -341,7 +333,7 @@ def plot_feature_importance(metrics: dict, fig_dir: Path) -> Path:
         # Expand x-axis limit to ensure labels don't get clipped
         ax.set_xlim(right=x_max * 1.18)
 
-    # ── Left: Permutation importance ──
+    # Left: Permutation importance
     ax = axes[0]
     idx  = np.argsort(metrics["perm_importances"])
     vals = metrics["perm_importances"][idx]
@@ -363,7 +355,7 @@ def plot_feature_importance(metrics: dict, fig_dir: Path) -> Path:
     ax.autoscale(axis="x")
     _label_bars(ax, bars, vals, errs)
 
-    # ── Right: Impurity (MDI) importance ──
+    # Right: Impurity (MDI) importance
     ax = axes[1]
     idx2  = np.argsort(metrics["impurity_importances"])
     vals2 = metrics["impurity_importances"][idx2]
@@ -387,7 +379,7 @@ def plot_feature_importance(metrics: dict, fig_dir: Path) -> Path:
     return out
 
 
-# ── Figure 2: Observed vs. Predicted (CV) ────────────────────────────────────
+# ===== Figure 2: Observed vs. Predicted (CV) ====================
 
 def plot_observed_vs_predicted(
     df_hist: pd.DataFrame,
@@ -448,7 +440,7 @@ def plot_observed_vs_predicted(
     return out
 
 
-# ── Figure 3: Residual Diagnostics ───────────────────────────────────────────
+# ===== Figure 3: Residual Diagnostics ===============
 
 def plot_residuals(
     df_hist: pd.DataFrame,
@@ -463,7 +455,7 @@ def plot_residuals(
     fig = plt.figure(figsize=(12, 5))
     gs  = gridspec.GridSpec(1, 3, figure=fig, wspace=0.38)
 
-    # ── Panel A: Residuals vs. fitted ──
+    # Panel A: Residuals vs. fitted
     ax1 = fig.add_subplot(gs[0])
     ax1.scatter(cv_preds, residuals, c=years, cmap="plasma",
         s=45, edgecolors="white", linewidths=0.4, zorder=3)
@@ -478,7 +470,7 @@ def plot_residuals(
     ax1.set_title("Residuals vs. Fitted", fontweight="bold")
     ax1.legend(fontsize=FONT_BASE - 2)
 
-    # ── Panel B: Residuals over time ──
+    # Panel B: Residuals over time
     ax2 = fig.add_subplot(gs[1])
     ax2.bar(years, residuals,
         color=np.where(residuals >= 0, "#2364a5", "#D73027"),
@@ -494,7 +486,7 @@ def plot_residuals(
         markersize=8, label="Under-predicted")
     ax2.legend(handles=[overbar, underbar], fontsize=FONT_BASE - 2)
 
-    # ── Panel C: Residual distribution (histogram + KDE) ──
+    # Panel C: Residual distribution (histogram + KDE)
     ax3 = fig.add_subplot(gs[2])
     from scipy.stats import norm as scipy_norm
     ax3.hist(residuals, bins=min(15, len(residuals) // 3),
@@ -588,7 +580,7 @@ def plot_scenario_projection(
             color="#696969",
             bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="#cccccc", alpha=0.85))
 
-    # ── Bottom panel: anomaly relative to historical mean ──
+    # Bottom panel: anomaly relative to historical mean
     ax2 = axes[1]
     hist_mean = df_predictions.loc[
         df_predictions["scenario"] == "historical", "R_proxy_predicted"
@@ -657,9 +649,8 @@ def save_metrics(metrics: dict, out_dir: Path) -> Path:
     return out
 
 
-# ===========================================================================
-# CLI
-# ===========================================================================
+
+# ===== CLI ====================
 
 @click.command()
 @click.option(
@@ -719,8 +710,7 @@ def save_metrics(metrics: dict, out_dir: Path) -> Path:
 def main(indices_dir, extreme_dir, water_stress_dir, output_dir, fig_dir,
          n_estimators, max_depth, cv_folds, random_state):
     """
-    Train a Random Forest to predict rainfall erosivity (R-factor proxy)
-    from CMIP5 precipitation indices and project it across RCP scenarios.
+    Train a Random Forest to predict rainfall erosivity (R-factor proxy) from CMIP5 precipitation indices and project it across RCP scenarios.
     """
     indices_path      = Path(indices_dir)
     extreme_path      = Path(extreme_dir)
@@ -773,7 +763,7 @@ def main(indices_dir, extreme_dir, water_stress_dir, output_dir, fig_dir,
         f"({int(df_hist['year'].min())}–{int(df_hist['year'].max())})"
     )
 
-    # ── Train & evaluate ──
+    # Train & evaluate
     logger.info("=" * 55)
     logger.info("STEP 2: Training Random Forest")
     logger.info("=" * 55)
@@ -839,7 +829,7 @@ def main(indices_dir, extreme_dir, water_stress_dir, output_dir, fig_dir,
     plot_scenario_projection(df_predictions, metrics, fig_path)
 
     # Final summary
-    logger.info("\n" + "=" * 55)
+    logger.info("=" * 55)
     logger.info("DONE")
     logger.info("=" * 55)
     logger.info(f"  Model     : {model_path.name}")
