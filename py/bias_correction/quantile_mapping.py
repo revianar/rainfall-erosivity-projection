@@ -154,14 +154,44 @@ def apply_bias_correction_spatial(
     pr_var: str = "pr",
 ) -> xr.DataArray:
     # Regrid obs (CHIRPS 0.25°) and hist to the model grid using nearest-neighbour.
-    # The reason is because there were lots of NaNs after interpolation. 😭 
+    # The reason is because there were lots of NaNs after interpolation. 😭
     model_lat = future_ds[pr_var].lat
     model_lon = future_ds[pr_var].lon
     obs_regrid  = obs_ds[pr_var].interp(lat=model_lat, lon=model_lon, method="nearest")
     hist_regrid = hist_ds[pr_var].interp(lat=model_lat, lon=model_lon, method="nearest")
 
-    obs_pr    = obs_regrid.values
-    hist_pr   = hist_regrid.values
+    # Fill ocean cells (NaN in CHIRPS) by propagating the nearest land cell's values so that all model grid cells get a valid transfer function.
+    # I thought it will just be necessary because HadGEM2-AO at 1.25°x1.875° has many ocean cells over the Java domain that have no CHIRPS observational coverage.
+    obs_vals  = obs_regrid.values.copy()   # (time, nlat, nlon)
+    hist_vals = hist_regrid.values.copy()
+
+    nlat_m = len(model_lat)
+    nlon_m = len(model_lon)
+    import numpy as _np
+
+    # Build list of land cell indices (cells with valid CHIRPS data)
+    land_cells = []
+    for _i in range(nlat_m):
+        for _j in range(nlon_m):
+            if _np.isfinite(obs_vals[:, _i, _j]).sum() > 0:
+                land_cells.append((_i, _j))
+
+    if len(land_cells) == 0:
+        logger.error("No land cells found in CHIRPS after regridding — check domain bbox.")
+    else:
+        # For every ocean cell, copy values from the nearest land cell
+        for _i in range(nlat_m):
+            for _j in range(nlon_m):
+                if _np.isfinite(obs_vals[:, _i, _j]).sum() == 0:
+                    # Find nearest land cell by Euclidean distance in grid indices
+                    nearest = min(land_cells,
+                                  key=lambda c: (c[0]-_i)**2 + (c[1]-_j)**2)
+                    obs_vals[:,  _i, _j] = obs_vals[:,  nearest[0], nearest[1]]
+                    hist_vals[:, _i, _j] = hist_vals[:, nearest[0], nearest[1]]
+        logger.info(f"  Ocean fill: {25 - len(land_cells)} cells filled from nearest land cell")
+
+    obs_pr    = obs_vals
+    hist_pr   = hist_vals
     future_pr = future_ds[pr_var].values
 
     corrected  = np.full_like(future_pr, np.nan)
