@@ -1,5 +1,4 @@
-# quantile_mapping.py  —  CMIP6 / QDM edition
-------------
+# QDM.py
 
 Bias-corrects CMIP6 daily precipitation using Quantile Delta Mapping (QDM).
 
@@ -11,12 +10,15 @@ delta on top of the observed distribution.  Unlike empirical QM (eQM) which
 directly maps future quantiles to the observed distribution, QDM prevents
 the well-known eQM artefact of washing out long-term climate trends.
 
-Algorithm (Cannon et al., 2015):
-  For each wet-day value x_f in the future scenario:
-    ### 1. Find its quantile τ in the historical model CDF:  `τ = F_hist(x_f)`
-    ### 2. Compute the relative delta:  `δ = x_f / Q_hist(τ)`   (multiplicative)
-    ### 3. Map τ onto the observed CDF:  `x_obs = Q_obs(τ)`
-    ### 4. Corrected value:              `x_corr = δ × x_obs`
+For each wet-day value x_f in the future scenario, the algorithm runs as follows (Cannon et al., 2015):
+
+  ### 1. Find its quantile τ in the historical model CDF:  `τ = F_hist(x_f)`
+
+  ### 2. Compute the relative delta:  `δ = x_f / Q_hist(τ)`   (multiplicative)
+
+  ### 3. Map τ onto the observed CDF:  `x_obs = Q_obs(τ)`
+
+  ### 4. Corrected value:              `x_corr = δ × x_obs`
 
   Dry-day frequency is corrected separately using the ratio of wet-day
   probabilities between obs and historical model.
