@@ -12,13 +12,17 @@ the well-known eQM artefact of washing out long-term climate trends.
 
 For each wet-day value x_f in the future scenario, the algorithm runs as follows (Cannon et al., 2015):
 
-  ### 1. Find its quantile τ in the historical model CDF:  `τ = F_hist(x_f)`
+  ### 1. Find its quantile τ in the historical model CDF
+  `τ = F_hist(x_f)`
 
-  ### 2. Compute the relative delta:  `δ = x_f / Q_hist(τ)`   (multiplicative)
+  ### 2. Compute the relative delta
+  `δ = x_f / Q_hist(τ)`   (multiplicative)
 
-  ### 3. Map τ onto the observed CDF:  `x_obs = Q_obs(τ)`
+  ### 3. Map τ onto the observed CDF
+  `x_obs = Q_obs(τ)`
 
-  ### 4. Corrected value:              `x_corr = δ × x_obs`
+  ### 4. Corrected value
+  `x_corr = δ × x_obs`
 
   Dry-day frequency is corrected separately using the ratio of wet-day
   probabilities between obs and historical model.
@@ -36,10 +40,10 @@ simulation against CHIRPS.
   ### 1. Merge CHIRPS + copy cropped model files
   python quantile_mapping.py prepare
 
-  ### 2. Apply QDM for all models and all scenarios
+  ### 2a. Apply QDM for all models and all scenarios
   python quantile_mapping.py apply --model all --scenario all
 
-  ### 3. Or target a single model / scenario
+  ### 2b. Or target a single model / scenario
   python quantile_mapping.py apply --model MRI-ESM2-0 --scenario ssp245
 
 ## Reference
