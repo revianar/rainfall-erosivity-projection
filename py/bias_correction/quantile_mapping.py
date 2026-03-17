@@ -1,225 +1,250 @@
 import sys
 import numpy as np
 import xarray as xr
-from scipy import stats
 from scipy.interpolate import interp1d
 from pathlib import Path
 import pickle
 import click
 import logging
-from typing import Literal
+import netCDF4 as nc4
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-DEFAULT_CHIRPS_DIR    = PROJECT_ROOT / "py" / "esgf"
-DEFAULT_PROCESSED_DIR = PROJECT_ROOT / "py" / "esgf" / "processed"
-DEFAULT_OUTPUT_DIR    = PROJECT_ROOT / "py" / "esgf" / "bias_corrected"
+DEFAULT_CHIRPS_DIR  = PROJECT_ROOT / "CHIRPS"
+DEFAULT_PROC_DIR    = PROJECT_ROOT / "Rainfall-Erosivity" / "py" / "data" / "processed"
+DEFAULT_OUTPUT_DIR  = PROJECT_ROOT / "Rainfall-Erosivity" / "py" / "data" / "bias_corrected"
 
-JAKARTA_BBOX = {
-    "lat_min": -8.75,
-    "lat_max": -3.75,
-    "lon_min": 103.125,
-    "lon_max": 111.875,
+MODELS = {
+    "MRI-ESM2-0": {
+        "ensemble":  "r1i1p1f1",
+        "grid":      "gn",
+        "scenarios": ["ssp126", "ssp245", "ssp585"],
+    },
+    "EC-Earth3": {
+        "ensemble":  "r1i1p1f1",
+        "grid":      "gr",
+        "scenarios": ["ssp126", "ssp245", "ssp585"],
+    },
+    "CNRM-CM6-1": {
+        "ensemble":  "r1i1p1f2",
+        "grid":      "gr",
+        "scenarios": ["ssp126", "ssp245", "ssp585"],
+    },
 }
 
-MODEL        = "HadGEM2-AO"
-ENSEMBLE     = "r1i1p1"
-SCENARIOS    = ["rcp26", "rcp45", "rcp85"]
+ALL_SCENARIOS = ["ssp126", "ssp245", "ssp585"]
+
+CALIB_START = 1981
+CALIB_END   = 2014
+
 CHIRPS_START = 1981
-CHIRPS_END   = 2005
+CHIRPS_END   = 2014          # CMIP6 historical ends 2014
 
-WET_DAY_THRESHOLD = 1.0   # mm/day
-N_QUANTILES       = 100   # Number of quantile bins
-
-# How many days to write per chunk when streaming to disk.
-# 365 days = one year at a time — keeps RAM usage low.
-CHUNK_DAYS = 365
+WET_THRESHOLD = 1.0          # mm/day
+N_QUANTILES   = 100          # quantile bins for QDM
+CHUNK_DAYS    = 365          # streaming chunk size
 
 
-# ===== Empirical QM ====================
+# ===== QDM core ===============================================================
 
-def fit_eqm_transfer(
-    obs: np.ndarray,
-    hist: np.ndarray,
-    n_quantiles: int = N_QUANTILES,
-    threshold: float = WET_DAY_THRESHOLD,
+def fit_qdm_transfer(
+    obs:        np.ndarray,
+    hist:       np.ndarray,
+    n_quantiles: int   = N_QUANTILES,
+    threshold:   float = WET_THRESHOLD,
 ) -> dict:
+    """
+    Fit a QDM transfer function from obs (CHIRPS) and hist (model calibration).
+
+    Returns a dict containing:
+      obs_cdf   : observed quantile values  [n_quantiles+1]
+      hist_cdf  : historical model quantile values  [n_quantiles+1]
+      quantiles : probability levels  [n_quantiles+1]  (0 to 1)
+      wet_prob_obs / wet_prob_hist : wet-day probabilities
+      threshold : wet day threshold
+    """
     quantiles = np.linspace(0, 1, n_quantiles + 1)
 
-    obs_wet  = obs[obs >= threshold]
+    obs_wet  = obs[ obs  >= threshold]
     hist_wet = hist[hist >= threshold]
 
-    obs_cdf  = np.quantile(obs_wet,  quantiles) if len(obs_wet)  > 0 else np.zeros(len(quantiles))
-    hist_cdf = np.quantile(hist_wet, quantiles) if len(hist_wet) > 0 else np.zeros(len(quantiles))
+    if len(obs_wet) < 10 or len(hist_wet) < 10:
+        # Not enough wet days — return identity transfer
+        fallback = np.linspace(0, max(obs.max(), hist.max(), 1), n_quantiles + 1)
+        return {
+            "obs_cdf":       fallback,
+            "hist_cdf":      fallback,
+            "quantiles":     quantiles,
+            "wet_prob_obs":  len(obs_wet)  / max(len(obs[~np.isnan(obs)]),   1),
+            "wet_prob_hist": len(hist_wet) / max(len(hist[~np.isnan(hist)]), 1),
+            "threshold":     threshold,
+        }
+
+    obs_cdf  = np.quantile(obs_wet,  quantiles)
+    hist_cdf = np.quantile(hist_wet, quantiles)
 
     return {
-        "method":        "empirical",
-        "quantiles":     quantiles,
         "obs_cdf":       obs_cdf,
         "hist_cdf":      hist_cdf,
-        "wet_prob_obs":  len(obs_wet)  / max(len(obs[~np.isnan(obs)]),  1),
+        "quantiles":     quantiles,
+        "wet_prob_obs":  len(obs_wet)  / max(len(obs[~np.isnan(obs)]),   1),
         "wet_prob_hist": len(hist_wet) / max(len(hist[~np.isnan(hist)]), 1),
         "threshold":     threshold,
     }
 
 
-def apply_eqm(
-    data: np.ndarray,
-    transfer: dict,
-    preserve_dry_days: bool = True,
+def apply_qdm(
+    future:    np.ndarray,
+    transfer:  dict,
+    threshold: float = WET_THRESHOLD,
 ) -> np.ndarray:
-    corrected = data.copy()
-    threshold = transfer["threshold"]
-    wet_mask  = data >= threshold
+    """
+    Apply QDM to a 1-D future time series.
 
-    if preserve_dry_days:
-        prob_ratio = transfer["wet_prob_obs"] / max(transfer["wet_prob_hist"], 1e-6)
-        if prob_ratio < 1.0:
-            wet_indices = np.where(wet_mask)[0]
-            n_to_dry    = int(len(wet_indices) * (1 - prob_ratio))
-            if n_to_dry > 0:
-                wet_precip = data[wet_indices]
-                to_dry     = wet_indices[np.argsort(wet_precip)[:n_to_dry]]
-                corrected[to_dry] = 0.0
-                wet_mask[to_dry]  = False
+    Steps per wet-day value x_f:
+      1. τ   = F_hist(x_f)              find quantile in hist CDF
+      2. δ   = x_f / Q_hist(τ)          multiplicative delta (climate change signal)
+      3. x*  = Q_obs(τ)                 map τ onto obs CDF
+      4. x_c = δ × x*                   apply delta to obs-mapped value
 
+    Dry-day frequency is adjusted using the wet-prob ratio before intensity
+    correction, ensuring that the corrected series has the same wet-day
+    frequency as the observations.
+    """
+    corrected = future.copy().astype(float)
+    obs_cdf   = transfer["obs_cdf"]
+    hist_cdf  = transfer["hist_cdf"]
+    quantiles = transfer["quantiles"]
+
+    # Step 1: dry-day frequency correction
+    ## If the model has more wet days than obs, demote the lightest wet days
+    ## to dry (zero) so the wet-day frequency matches observations.
+    wet_mask = corrected >= threshold
+    prob_obs  = transfer["wet_prob_obs"]
+    prob_hist = transfer["wet_prob_hist"]
+
+    if prob_hist > prob_obs and wet_mask.sum() > 0:
+        ratio        = prob_obs / max(prob_hist, 1e-9)
+        wet_indices  = np.where(wet_mask)[0]
+        n_to_dry     = int(len(wet_indices) * (1.0 - ratio))
+        if n_to_dry > 0:
+            # Demote the lightest wet-day values first
+            sorted_wet   = wet_indices[np.argsort(corrected[wet_indices])]
+            demote       = sorted_wet[:n_to_dry]
+            corrected[demote] = 0.0
+            wet_mask[demote]  = False
+
+    # Step 2: QDM intensity correction on remaining wet days
     if wet_mask.sum() > 0:
-        wet_data = data[wet_mask]
-        f_interp = interp1d(
-            transfer["hist_cdf"], transfer["obs_cdf"],
+        x_f = corrected[wet_mask]
+
+        # Interpolators for hist CDF and obs CDF (both indexed by quantile)
+        # f_tau   : value -> quantile level   (invert hist CDF)
+        # f_obs_q : quantile level -> obs value
+        f_tau   = interp1d(
+            hist_cdf, quantiles,
             bounds_error=False,
-            fill_value=(transfer["obs_cdf"][0], transfer["obs_cdf"][-1])
+            fill_value=(quantiles[0], quantiles[-1]),
         )
-        corrected[wet_mask] = f_interp(wet_data)
-        corrected[wet_mask] = np.maximum(corrected[wet_mask], threshold)
+        f_obs_q = interp1d(
+            quantiles, obs_cdf,
+            bounds_error=False,
+            fill_value=(obs_cdf[0], obs_cdf[-1]),
+        )
+        f_hist_q = interp1d(
+            quantiles, hist_cdf,
+            bounds_error=False,
+            fill_value=(hist_cdf[0], hist_cdf[-1]),
+        )
 
-    corrected[~wet_mask & (corrected > 0)] = 0.0
-    corrected = np.maximum(corrected, 0.0)
-    return corrected
+        tau        = f_tau(x_f)
+        x_hist_tau = f_hist_q(tau)                 # Q_hist(τ)
+        x_obs_tau  = f_obs_q(tau)                  # Q_obs(τ)
 
+        # Multiplicative delta  (clip denominator to avoid div-by-zero)
+        delta      = x_f / np.maximum(x_hist_tau, 1e-6)   # step 2
 
-# ===== Parametric QM (Gamma) ====================
+        # Cap delta at 5× to avoid runaway extrapolation in extremes
+        delta      = np.clip(delta, 0.0, 5.0)
 
-def fit_pqm_transfer(
-    obs: np.ndarray,
-    hist: np.ndarray,
-    threshold: float = WET_DAY_THRESHOLD,
-) -> dict:
-    obs_wet  = obs[obs >= threshold]
-    hist_wet = hist[hist >= threshold]
+        corrected[wet_mask] = delta * x_obs_tau    # step 4
 
-    obs_params  = stats.gamma.fit(obs_wet,  floc=0) if len(obs_wet)  > 10 else (1, 0, 1)
-    hist_params = stats.gamma.fit(hist_wet, floc=0) if len(hist_wet) > 10 else (1, 0, 1)
-
-    return {
-        "method":        "parametric_gamma",
-        "obs_gamma":     obs_params,
-        "hist_gamma":    hist_params,
-        "wet_prob_obs":  len(obs_wet)  / max(len(obs[~np.isnan(obs)]),  1),
-        "wet_prob_hist": len(hist_wet) / max(len(hist[~np.isnan(hist)]), 1),
-        "threshold":     threshold,
-    }
-
-
-def apply_pqm(data: np.ndarray, transfer: dict) -> np.ndarray:
-    corrected = data.copy()
-    threshold = transfer["threshold"]
-    wet_mask  = data >= threshold
-
-    if wet_mask.sum() > 0:
-        wet_data   = data[wet_mask]
-        obs_shape,  obs_loc,  obs_scale  = transfer["obs_gamma"]
-        hist_shape, hist_loc, hist_scale = transfer["hist_gamma"]
-
-        p = stats.gamma.cdf(wet_data, hist_shape, loc=hist_loc, scale=hist_scale)
-        p = np.clip(p, 1e-6, 1 - 1e-6)
-
-        corrected[wet_mask] = stats.gamma.ppf(p, obs_shape, loc=obs_loc, scale=obs_scale)
+        # Enforce minimum wet-day value and non-negativity
         corrected[wet_mask] = np.maximum(corrected[wet_mask], threshold)
 
     corrected[~wet_mask] = 0.0
+    corrected            = np.maximum(corrected, 0.0)
     return corrected
 
 
-# ===== Spatial Application ====================
+# ===== Spatial QDM ============================================================
 
-def apply_bias_correction_spatial(
-    obs_ds: xr.Dataset,
-    hist_ds: xr.Dataset,
-    future_ds: xr.Dataset,
-    method: Literal["empirical", "parametric"] = "empirical",
-    pr_var: str = "pr",
-) -> xr.DataArray:
-    # Regrid obs (CHIRPS 0.25°) and hist to the model grid using nearest-neighbour.
-    # The reason is because there were lots of NaNs after interpolation. 😭
+def apply_qdm_spatial(
+    obs_ds:     xr.Dataset,
+    hist_ds:    xr.Dataset,
+    future_ds:  xr.Dataset,
+    pr_var:     str = "pr",
+) -> tuple:
     model_lat = future_ds[pr_var].lat
     model_lon = future_ds[pr_var].lon
+
+    # Regrid obs and hist to model grid
     obs_regrid  = obs_ds[pr_var].interp(lat=model_lat, lon=model_lon, method="nearest")
     hist_regrid = hist_ds[pr_var].interp(lat=model_lat, lon=model_lon, method="nearest")
 
-    # Fill ocean cells (NaN in CHIRPS) by propagating the nearest land cell's values so that all model grid cells get a valid transfer function.
-    # I thought it will just be necessary because HadGEM2-AO at 1.25°x1.875° has many ocean cells over the Java domain that have no CHIRPS observational coverage.
-    obs_vals  = obs_regrid.values.copy()   # (time, nlat, nlon)
+    obs_vals  = obs_regrid.values.copy()    # (time, nlat, nlon)
     hist_vals = hist_regrid.values.copy()
 
-    nlat_m = len(model_lat)
-    nlon_m = len(model_lon)
-    import numpy as _np
+    nlat = len(model_lat)
+    nlon = len(model_lon)
 
-    # Build list of land cell indices (cells with valid CHIRPS data)
-    land_cells = []
-    for _i in range(nlat_m):
-        for _j in range(nlon_m):
-            if _np.isfinite(obs_vals[:, _i, _j]).sum() > 0:
-                land_cells.append((_i, _j))
+    # Ocean cell filling
+    land_cells = [
+        (i, j)
+        for i in range(nlat)
+        for j in range(nlon)
+        if np.isfinite(obs_vals[:, i, j]).sum() > 10
+    ]
 
-    if len(land_cells) == 0:
-        logger.error("No land cells found in CHIRPS after regridding — check domain bbox.")
+    if not land_cells:
+        logger.error("No land cells found — check domain bbox or CHIRPS coverage.")
     else:
-        # For every ocean cell, copy values from the nearest land cell
-        for _i in range(nlat_m):
-            for _j in range(nlon_m):
-                if _np.isfinite(obs_vals[:, _i, _j]).sum() == 0:
-                    # Find nearest land cell by Euclidean distance in grid indices
+        n_ocean = 0
+        for i in range(nlat):
+            for j in range(nlon):
+                if np.isfinite(obs_vals[:, i, j]).sum() <= 10:
                     nearest = min(land_cells,
-                                  key=lambda c: (c[0]-_i)**2 + (c[1]-_j)**2)
-                    obs_vals[:,  _i, _j] = obs_vals[:,  nearest[0], nearest[1]]
-                    hist_vals[:, _i, _j] = hist_vals[:, nearest[0], nearest[1]]
-        logger.info(f"  Ocean fill: {25 - len(land_cells)} cells filled from nearest land cell")
+                                  key=lambda c: (c[0] - i) ** 2 + (c[1] - j) ** 2)
+                    obs_vals[:,  i, j] = obs_vals[:,  nearest[0], nearest[1]]
+                    hist_vals[:, i, j] = hist_vals[:, nearest[0], nearest[1]]
+                    n_ocean += 1
+        if n_ocean:
+            logger.info(f"  Ocean fill: {n_ocean} cell(s) filled from nearest land cell")
 
-    obs_pr    = obs_vals
-    hist_pr   = hist_vals
-    future_pr = future_ds[pr_var].values
+    future_pr = future_ds[pr_var].values          # (time, nlat, nlon)
+    corrected = np.full_like(future_pr, np.nan, dtype=np.float32)
+    transfers = {}
 
-    corrected  = np.full_like(future_pr, np.nan)
-    ntime, nlat, nlon = future_pr.shape
-    transfer_functions = {}
-
-    logger.info(f"Applying {method} QM over {nlat}x{nlon} grid cells...")
+    logger.info(f"  Applying QDM over {nlat} x {nlon} grid cells ...")
 
     for i in range(nlat):
         for j in range(nlon):
-            obs_1d    = obs_pr[:, i, j]
-            hist_1d   = hist_pr[:, i, j]
+            obs_1d    = obs_vals[:,  i, j]
+            hist_1d   = hist_vals[:, i, j]
             future_1d = future_pr[:, i, j]
 
             if np.all(np.isnan(obs_1d)) or np.all(np.isnan(hist_1d)):
                 continue
 
-            if method == "empirical":
-                transfer = fit_eqm_transfer(obs_1d, hist_1d)
-                corrected[:, i, j] = apply_eqm(future_1d, transfer)
-            else:
-                transfer = fit_pqm_transfer(obs_1d, hist_1d)
-                corrected[:, i, j] = apply_pqm(future_1d, transfer)
+            tf = fit_qdm_transfer(obs_1d, hist_1d)
+            corrected[:, i, j] = apply_qdm(future_1d, tf)
+            transfers[(i, j)]  = tf
 
-            transfer_functions[(i, j)] = transfer
-
-        if i % 5 == 0:
-            logger.info(f"  Row {i+1}/{nlat} complete")
+        if (i + 1) % max(1, nlat // 5) == 0:
+            logger.info(f"    Row {i+1}/{nlat} done")
 
     da_corrected = xr.DataArray(
         corrected,
@@ -227,23 +252,21 @@ def apply_bias_correction_spatial(
         dims=future_ds[pr_var].dims,
         attrs={
             **future_ds[pr_var].attrs,
-            "bias_correction": f"Quantile Mapping ({method})",
+            "bias_correction": "Quantile Delta Mapping (QDM)",
             "reference_obs":   "CHIRPS v2.0",
             "units":           "mm/day",
         },
     )
-    return da_corrected, transfer_functions
+    return da_corrected, transfers
 
 
-# ===== NetCDF4 append (handles leap years & partial chunks) ====================
-
-import netCDF4 as nc4
+# ===== NetCDF4 streaming append ===============================================
 
 def _nc4_append(out_path: Path, data: np.ndarray, times, var_name: str) -> None:
     with nc4.Dataset(out_path, "a") as nc_out:
-        t_dim  = nc_out.variables["time"]
-        t_start = len(t_dim)                      # current length before append
-        t_end   = t_start + len(times)
+        t_dim    = nc_out.variables["time"]
+        t_start  = len(t_dim)
+        t_end    = t_start + len(times)
         calendar = getattr(t_dim, "calendar", "standard")
         units    = t_dim.units
 
@@ -251,544 +274,424 @@ def _nc4_append(out_path: Path, data: np.ndarray, times, var_name: str) -> None:
             t_num = nc4.date2num(list(times), units=units, calendar=calendar)
         else:
             import pandas as pd
-            py_times = pd.DatetimeIndex(times).to_pydatetime().tolist()
-            t_num = nc4.date2num(py_times, units=units, calendar=calendar)
+            t_num = nc4.date2num(
+                pd.DatetimeIndex(times).to_pydatetime().tolist(),
+                units=units, calendar=calendar
+            )
 
         t_dim[t_start:t_end] = t_num
-
-        # Append data values
         v = nc_out.variables[var_name]
-        if data.ndim == 1:
-            v[t_start:t_end] = data
-        elif data.ndim == 3:
+        if data.ndim == 3:
             v[t_start:t_end, :, :] = data
         else:
             v[t_start:t_end, ...] = data
 
 
-# ===== CHIRPS processing ====================
+# ===== CHIRPS processing ======================================================
 
-def crop_chirps_year(nc_path: Path, bbox: dict = JAKARTA_BBOX) -> xr.Dataset:
+def crop_chirps_year(nc_path: Path) -> xr.Dataset:
     ds = xr.open_dataset(
         nc_path,
         decode_times=xr.coders.CFDatetimeCoder(use_cftime=True),
     )
-
     if "precip" not in ds:
-        raise ValueError(
-            f"Expected variable 'precip' in {nc_path.name}, "
-            f"found: {list(ds.data_vars)}"
-        )
+        raise ValueError(f"Expected 'precip' in {nc_path.name}, found {list(ds.data_vars)}")
 
+    # Jakarta domain — keep at native CHIRPS 0.25° for regridding later
+    BBOX = {"lat_min": -9.5, "lat_max": -3.0, "lon_min": 102.0, "lon_max": 113.0}
     ds["precip"] = ds["precip"].where(ds["precip"] >= 0)
-
-    ds_cropped = ds.sel(
-        latitude=slice(bbox["lat_min"],  bbox["lat_max"]),
-        longitude=slice(bbox["lon_min"], bbox["lon_max"]),
+    ds = ds.sel(
+        latitude=slice(BBOX["lat_min"],  BBOX["lat_max"]),
+        longitude=slice(BBOX["lon_min"], BBOX["lon_max"]),
     )
-    ds_cropped = ds_cropped.rename({"latitude": "lat", "longitude": "lon"})
-    return ds_cropped
+    ds = ds.rename({"latitude": "lat", "longitude": "lon"})
+    return ds
 
 
-def merge_chirps_streaming(
-    chirps_dir: Path,
-    out_path: Path,
-    start_year: int,
-    end_year: int,
-) -> None:
-    logger.info(f"{'='*42}")
-    logger.info(f"STEP 1: Merging CHIRPS files ({start_year}-{end_year} one year at a time)")
-    logger.info(f"{'='*42}")
+def merge_chirps_streaming(chirps_dir: Path, out_path: Path,
+                            start_year: int, end_year: int) -> None:
+    logger.info("=" * 50)
+    logger.info(f"Merging CHIRPS {start_year}-{end_year}")
+    logger.info("=" * 50)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-
     if out_path.exists():
         out_path.unlink()
-        logger.info(f"  Removed existing file: {out_path.name}")
 
     missing     = []
     first_write = True
     total_days  = 0
-    pr_sum      = 0.0
-    pr_max_all  = 0.0
-
-    global_attrs = {
-        "title":      "CHIRPS v2.0 Daily Precipitation - Jakarta Greater Capital Region",
-        "source":     "Climate Hazards Group InfraRed Precipitation with Station data (CHIRPS v2.0)",
-        "resolution": "0.25 degrees",
-        "domain":     "Jakarta (Jabodetabek): 5.5S-7.0S, 106E-107.5E",
-        "period":     f"{start_year}-{end_year}",
-        "processing": "Merged from annual files; fill values masked; coords renamed to lat/lon",
-    }
 
     for year in range(start_year, end_year + 1):
-        fname = f"chirps-v2.0.{year}.days_p25.nc"
-        fpath = chirps_dir / fname
-
+        fpath = chirps_dir / f"chirps-v2.0.{year}.days_p25.nc"
         if not fpath.exists():
-            logger.warning(f"  Missing: {fname}")
+            logger.warning(f"  Missing: {fpath.name}")
             missing.append(year)
             continue
-
         try:
             ds_year = crop_chirps_year(fpath)
-            ds_year["precip"].attrs.update({
-                "units":     "mm/day",
-                "long_name": "Daily Precipitation",
-            })
+            ds_year["precip"].attrs.update({"units": "mm/day", "long_name": "Daily Precipitation"})
 
             if first_write:
-                # First year: use xarray to create the file with all metadata
-                ds_year.attrs.update(global_attrs)
-                ds_year.to_netcdf(
-                    out_path,
-                    mode="w",
-                    unlimited_dims=["time"],
-                    encoding={"precip": {"dtype": "float32", "zlib": True, "complevel": 4}},
-                )
+                ds_year.to_netcdf(out_path, mode="w", unlimited_dims=["time"],
+                                   encoding={"precip": {"dtype": "float32", "zlib": True, "complevel": 4}})
                 first_write = False
             else:
-                # Subsequent years: append with netCDF4 directly (handles any n_days)
-                _nc4_append(
-                    out_path,
-                    data     = ds_year["precip"].values,
-                    times    = ds_year["time"].values,
-                    var_name = "precip",
-                )
+                _nc4_append(out_path, ds_year["precip"].values, ds_year["time"].values, "precip")
 
-            vals   = ds_year["precip"].values.astype(float)
-            finite = vals[np.isfinite(vals)]
             total_days += len(ds_year.time)
-            if len(finite) > 0:
-                pr_sum    += finite.sum()
-                pr_max_all = max(pr_max_all, finite.max())
-
-            logger.info(
-                f"  {year} success  ({len(ds_year.time)} days | "
-                f"lat [{float(ds_year.lat.min()):.2f}, {float(ds_year.lat.max()):.2f}] | "
-                f"lon [{float(ds_year.lon.min()):.2f}, {float(ds_year.lon.max()):.2f}])"
-            )
-
+            logger.info(f"  {year}  ({len(ds_year.time)} days)")
             ds_year.close()
-            del ds_year, vals, finite
-
         except Exception as e:
-            logger.error(f"  Failed to process {fname}: {e}")
+            logger.error(f"  Failed {year}: {e}")
 
     if first_write:
-        logger.error("No CHIRPS files were written. Check --chirps-dir path.")
+        logger.error("No CHIRPS files written — check --chirps-dir.")
         sys.exit(1)
-
     if missing:
         logger.warning(f"  Missing years: {missing}")
-
-    pr_mean_all = pr_sum / total_days if total_days > 0 else float("nan")
-    logger.info(f"\n  Saved [CHIRPS]: {out_path.name}")
-    logger.info(f"    Days   : {total_days:,}")
-    logger.info(f"    Mean   : {pr_mean_all:.2f} mm/day")
-    logger.info(f"    Max    : {pr_max_all:.2f} mm/day")
+    logger.info(f"  Saved: {out_path.name}  ({total_days:,} days total)")
 
 
-# ===== Load model files ====================
+# ===== Model file helpers =====================================================
 
 def load_model_lazy(fpath: Path, label: str) -> xr.Dataset:
-    logger.info(f"  Opening [{label}]: {fpath.name}")
-
+    logger.info(f"  Loading [{label}]: {fpath.name}")
     ds = xr.open_dataset(
         fpath,
         decode_times=xr.coders.CFDatetimeCoder(use_cftime=True),
         chunks={"time": CHUNK_DAYS},
     )
-
-    if ds["pr"].attrs.get("units", "") in ["kg m-2 s-1", "kg/m2/s"]:
-        logger.info(f"    Converting units: kg m-2 s-1 -> mm/day")
+    # Unit conversion if needed
+    units = ds["pr"].attrs.get("units", "")
+    if units in ["kg m-2 s-1", "kg/m2/s"]:
+        logger.info("    Converting units: kg m-2 s-1 -> mm/day")
         ds["pr"] = ds["pr"] * 86400.0
         ds["pr"].attrs["units"] = "mm/day"
-
     logger.info(
-        f"    Period : {str(ds.time.values[0])[:10]} -> {str(ds.time.values[-1])[:10]}"
-        f"  |  {len(ds.time):,} days  |  {len(ds.lat)} lat x {len(ds.lon)} lon"
+        f"    {str(ds.time.values[0])[:10]} -> {str(ds.time.values[-1])[:10]}"
+        f"  ({len(ds.time):,} days  |  {len(ds.lat)} lat x {len(ds.lon)} lon)"
     )
     return ds
 
 
-def save_model_streaming(ds: xr.Dataset, out_path: Path, label: str) -> None:
+def save_model_streaming(ds: xr.Dataset, out_path: Path, label: str,
+                          pr_var: str = "pr") -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
-
     if out_path.exists():
         out_path.unlink()
 
-    n_days     = len(ds.time)
-    n_chunks   = int(np.ceil(n_days / CHUNK_DAYS))
-    pr_sum     = 0.0
-    pr_max_all = 0.0
+    n_days   = len(ds.time)
+    n_chunks = int(np.ceil(n_days / CHUNK_DAYS))
+    pr_sum   = 0.0
+    pr_max   = 0.0
 
-    t_start_str = str(ds.time.values[0])[:10]
-    t_end_str   = str(ds.time.values[-1])[:10]
+    logger.info(f"  Writing [{label}] ({n_chunks} chunk(s)) -> {out_path.name}")
 
-    logger.info(f"  Writing [{label}] in {n_chunks} chunk(s) of up to {CHUNK_DAYS} days...")
+    for idx in range(n_chunks):
+        s = idx * CHUNK_DAYS
+        e = min(s + CHUNK_DAYS, n_days)
+        chunk = ds.isel(time=slice(s, e)).load()
 
-    for chunk_idx in range(n_chunks):
-        c_start  = chunk_idx * CHUNK_DAYS
-        c_end    = min(c_start + CHUNK_DAYS, n_days)
-        ds_chunk = ds.isel(time=slice(c_start, c_end)).load()
-
-        if chunk_idx == 0:
-            # First chunk: xarray creates the file with full metadata
-            ds_chunk.to_netcdf(
-                out_path,
-                mode="w",
-                unlimited_dims=["time"],
-                encoding={"pr": {"dtype": "float32", "zlib": True, "complevel": 4}},
-            )
+        if idx == 0:
+            chunk.to_netcdf(out_path, mode="w", unlimited_dims=["time"],
+                             encoding={pr_var: {"dtype": "float32", "zlib": True, "complevel": 4}})
         else:
-            # All other chunks (including final partial): append with netCDF4
-            _nc4_append(
-                out_path,
-                data     = ds_chunk["pr"].values,
-                times    = ds_chunk["time"].values,
-                var_name = "pr",
-            )
+            _nc4_append(out_path, chunk[pr_var].values, chunk["time"].values, pr_var)
 
-        raw    = ds_chunk["pr"].values.astype(float)
-        finite = raw[np.isfinite(raw)]
-        if len(finite) > 0:
-            pr_sum    += finite.sum()
-            pr_max_all = max(pr_max_all, finite.max())
+        raw = chunk[pr_var].values.astype(float)
+        fin = raw[np.isfinite(raw)]
+        if len(fin) > 0:
+            pr_sum += fin.sum()
+            pr_max  = max(pr_max, fin.max())
+        del chunk, raw, fin
 
-        del ds_chunk, raw, finite
-
-        if (chunk_idx + 1) % 10 == 0 or chunk_idx == n_chunks - 1:
-            logger.info(f"    Chunk {chunk_idx+1}/{n_chunks} written")
+        if (idx + 1) % 10 == 0 or idx == n_chunks - 1:
+            logger.info(f"    Chunk {idx+1}/{n_chunks}")
 
     ds.close()
-
-    pr_mean_all = pr_sum / n_days if n_days > 0 else float("nan")
-
-    logger.info(f"\n  Saved [{label}]: {out_path.name}")
-    logger.info(f"    Period : {t_start_str} -> {t_end_str}")
-    logger.info(f"    Days   : {n_days:,}")
-    logger.info(f"    Mean   : {pr_mean_all:.2f} mm/day")
-    logger.info(f"    Max    : {pr_max_all:.2f} mm/day")
+    mean = pr_sum / n_days if n_days > 0 else float("nan")
+    logger.info(f"    mean={mean:.2f} mm/day  max={pr_max:.2f} mm/day")
 
 
-def load_historical(processed_dir: Path) -> xr.Dataset:
-    logger.info(f"{'='*42}")
-    logger.info("STEP 2: Loading historical model file")
-    logger.info(f"{'='*42}")
-
-    pattern = f"pr_day_{MODEL}_historical_{ENSEMBLE}_*_jakarta.nc"
-    files   = sorted(processed_dir.glob(pattern))
-
-    if not files:
-        logger.error(f"No historical file found in: {processed_dir}")
-        logger.error(f"Expected pattern: {pattern}")
-        sys.exit(1)
-
-    if len(files) > 1:
-        logger.warning(f"Multiple historical files found - using: {files[0].name}")
-
-    return load_model_lazy(files[0], "historical")
-
-
-def load_future_scenario(processed_dir: Path, scenario: str) -> xr.Dataset:
-    pattern = f"pr_day_{MODEL}_{scenario}_{ENSEMBLE}_*_jakarta.nc"
-    files   = sorted(processed_dir.glob(pattern))
-
-    if not files:
-        logger.warning(f"  No file found for {scenario} - pattern: {pattern}")
-        return None
-
-    if len(files) > 1:
-        logger.warning(f"  Multiple files for {scenario} - using: {files[0].name}")
-
-    return load_model_lazy(files[0], scenario)
-
-
-# ===== CLI ====================
+# ===== CLI 'prepare' subcommand =====================================================
 
 @click.group()
 def cli():
     pass
 
-# ===== Prepare subcommands ====================
 
 @cli.command("prepare")
-@click.option(
-    "--chirps-dir",
-    default=str(DEFAULT_CHIRPS_DIR),
-    show_default=True,
-    help="Directory containing annual CHIRPS .nc files.",
-)
-@click.option(
-    "--processed-dir",
-    default=str(DEFAULT_PROCESSED_DIR),
-    show_default=True,
-    help="Directory containing processed (Jakarta-cropped) CMIP5 model files.",
-)
-@click.option(
-    "--output-dir",
-    default=str(DEFAULT_OUTPUT_DIR),
-    show_default=True,
-    help="Directory to save prepared files.",
-)
-@click.option("--chirps-start", default=CHIRPS_START, show_default=True)
-@click.option("--chirps-end",   default=CHIRPS_END,   show_default=True)
-def prepare(chirps_dir, processed_dir, output_dir, chirps_start, chirps_end):
-    """Merge CHIRPS files and copy model files into bias_corrected/."""
-    chirps_path    = Path(chirps_dir)
-    processed_path = Path(processed_dir)
-    output_path    = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+@click.option("--chirps-dir",    default=str(DEFAULT_CHIRPS_DIR), show_default=True,
+              help="Directory containing annual CHIRPS .nc files.")
+@click.option("--processed-dir", default=str(DEFAULT_PROC_DIR),   show_default=True,
+              help="Directory containing Jakarta-cropped CMIP6 model files.")
+@click.option("--output-dir",    default=str(DEFAULT_OUTPUT_DIR), show_default=True,
+              help="Directory to save prepared files.")
+@click.option("--model",         default="all",
+              type=click.Choice(list(MODELS.keys()) + ["all"]), show_default=True,
+              help="Which model to prepare, or 'all'.")
+@click.option("--chirps-start",  default=CHIRPS_START, show_default=True)
+@click.option("--chirps-end",    default=CHIRPS_END,   show_default=True)
+def prepare(chirps_dir, processed_dir, output_dir, model, chirps_start, chirps_end):
+    """
+    Merge CHIRPS files and copy cropped CMIP6 model files into bias_corrected/.
 
+    CHIRPS is merged once (shared across all models).
+    Model files are copied per-model.
+    """
+    chirps_path = Path(chirps_dir)
+    proc_path   = Path(processed_dir)
+    out_path    = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    logger.info("=" * 50)
+    logger.info("quantile_mapping.py  prepare  (CMIP6 / QDM)")
+    logger.info("=" * 50)
     logger.info(f"Project root  : {PROJECT_ROOT}")
     logger.info(f"CHIRPS dir    : {chirps_path}")
-    logger.info(f"Processed dir : {processed_path}")
-    logger.info(f"Output dir    : {output_path}")
+    logger.info(f"Processed dir : {proc_path}")
+    logger.info(f"Output dir    : {out_path}")
 
-    chirps_out = output_path / f"chirps_v2_jakarta_{chirps_start}_{chirps_end}.nc"
-    merge_chirps_streaming(chirps_path, chirps_out, chirps_start, chirps_end)
+    # CHIRPS (shared)
+    chirps_out = out_path / f"chirps_v2_jakarta_{chirps_start}_{chirps_end}.nc"
+    if chirps_out.exists():
+        logger.info(f"\nCHIRPS file already exists — skipping merge: {chirps_out.name}")
+    else:
+        merge_chirps_streaming(chirps_path, chirps_out, chirps_start, chirps_end)
 
-    ds_hist  = load_historical(processed_path)
-    hist_out = output_path / f"pr_day_{MODEL}_historical_{ENSEMBLE}_jakarta_bc_input.nc"
-    save_model_streaming(ds_hist, hist_out, "historical")
+    # Model files per model
+    models_to_run = list(MODELS.keys()) if model == "all" else [model]
 
-    logger.info(f"{'='*42}")
-    logger.info("Loading future RCP scenario files")
-    logger.info(f"{'='*42}")
+    for mdl in models_to_run:
+        cfg = MODELS[mdl]
+        logger.info(f"\n{'=' * 50}")
+        logger.info(f"Model: {mdl}  (ensemble={cfg['ensemble']}  grid={cfg['grid']})")
+        logger.info(f"{'=' * 50}")
 
-    for scen in SCENARIOS:
-        ds_future = load_future_scenario(processed_path, scen)
-        if ds_future is None:
-            continue
-        future_out = output_path / f"pr_day_{MODEL}_{scen}_{ENSEMBLE}_jakarta_bc_input.nc"
-        save_model_streaming(ds_future, future_out, scen)
+        for scen in ["historical"] + cfg["scenarios"]:
+            pattern  = f"pr_day_{mdl}_{scen}_{cfg['ensemble']}_jakarta.nc"
+            src_file = proc_path / pattern
 
-    logger.info(f"{'='*42}")
-    logger.info("ALL DONE - Files ready for bias correction:")
-    logger.info(f"{'='*42}")
-    for f in sorted(output_path.glob("*.nc")):
+            if not src_file.exists():
+                logger.warning(f"  Not found: {pattern} — run crop_domain.py first")
+                continue
+
+            dst_file = out_path / pattern
+            if dst_file.exists():
+                logger.info(f"  Already in output dir: {pattern}")
+                continue
+
+            # Load, validate, and re-save into bias_corrected/ with compression
+            logger.info(f"  Copying: {pattern}")
+            ds = load_model_lazy(src_file, f"{mdl}/{scen}")
+            save_model_streaming(ds, dst_file, f"{mdl}/{scen}")
+
+    logger.info("\n" + "=" * 50)
+    logger.info("prepare DONE — files in bias_corrected/:")
+    logger.info("=" * 50)
+    for f in sorted(out_path.glob("*.nc")):
         logger.info(f"  {f.name}")
     logger.info(
-        f"\nRun bias correction with:\n"
-        f"  python quantile_mapping.py apply --scenario rcp26\n"
-        f"  python quantile_mapping.py apply --scenario rcp45\n"
-        f"  python quantile_mapping.py apply --scenario rcp85\n"
-        f"  python quantile_mapping.py apply --scenario all"
+        "\nNext step:\n"
+        "  python quantile_mapping.py apply --model all --scenario all"
     )
 
 
-# ===== Apply: core logic ====================
+# ===== Apply: core per-model-per-scenario =====================================
 
-def _run_one_scenario(
-    scenario: str,
-    obs_path: Path,
-    hist_path: Path,
+def _run_qdm(
+    model:       str,
+    scenario:    str,
     output_path: Path,
-    method: str,
     calib_start: int,
-    calib_end: int,
-    save_transfer: bool,
+    calib_end:   int,
+    save_tf:     bool,
 ) -> bool:
     """
-    Run QM bias correction for a single scenario.
-    Returns True on success, False if the future input file is missing.
-    Obs and hist datasets are loaded inside this function so they are
-    released from RAM after each scenario when running --scenario all.
+    Run QDM for one model × scenario combination.
+
+    File naming:
+      Input  (historical) : pr_day_<model>_historical_<ensemble>_jakarta.nc
+      Input  (future)     : pr_day_<model>_<scenario>_<ensemble>_jakarta.nc
+      Output (corrected)  : pr_day_<model>_<scenario>_<ensemble>_jakarta_qdm.nc
     """
-    future_path = Path(
-        DEFAULT_OUTPUT_DIR / f"pr_day_{MODEL}_{scenario}_{ENSEMBLE}_jakarta_bc_input.nc"
+    cfg      = MODELS[model]
+    ensemble = cfg["ensemble"]
+
+    chirps_file = next(iter(sorted(output_path.glob("chirps_v2_jakarta_*.nc"))), None)
+    hist_file   = output_path / f"pr_day_{model}_historical_{ensemble}_jakarta.nc"
+    future_file = output_path / f"pr_day_{model}_{scenario}_{ensemble}_jakarta.nc"
+    out_file    = output_path / f"pr_day_{model}_{scenario}_{ensemble}_jakarta_qdm.nc"
+
+    # Check inputs exist
+    missing = []
+    if chirps_file is None:  missing.append("CHIRPS file (run prepare first)")
+    if not hist_file.exists():   missing.append(str(hist_file.name))
+    if not future_file.exists(): missing.append(str(future_file.name))
+    if missing:
+        for m in missing:
+            logger.error(f"  Missing: {m}")
+        return False
+
+    logger.info("=" * 55)
+    logger.info(f"QDM  |  model={model}  scenario={scenario}")
+    logger.info(f"  Calibration : {calib_start}-{calib_end}")
+    logger.info(f"  CHIRPS      : {chirps_file.name}")
+    logger.info(f"  Historical  : {hist_file.name}")
+    logger.info(f"  Future      : {future_file.name}")
+    logger.info("=" * 55)
+
+    # Load CHIRPS
+    logger.info("Loading CHIRPS obs ...")
+    ds_obs = xr.open_dataset(
+        chirps_file,
+        decode_times=xr.coders.CFDatetimeCoder(use_cftime=True),
     )
-
-    for p, label in [(obs_path, "obs"), (hist_path, "hist"), (future_path, "future")]:
-        if not p.exists():
-            logger.error(f"File not found [{label}]: {p}")
-            logger.error("Run the 'prepare' subcommand first.")
-            return False
-
-    logger.info(f"{'='*42}")
-    logger.info(f"APPLY: Bias correction for {scenario.upper()}")
-    logger.info(f"  Method     : {method} QM")
-    logger.info(f"  Calib      : {calib_start}-{calib_end}")
-    logger.info(f"  Obs        : {obs_path.name}")
-    logger.info(f"  Historical : {hist_path.name}")
-    logger.info(f"  Future     : {future_path.name}")
-    logger.info(f"{'='*42}")
-
-    # Load obs (CHIRPS)
-    logger.info("Loading CHIRPS obs...")
-    ds_obs_full = xr.open_dataset(obs_path, decode_times=xr.coders.CFDatetimeCoder(use_cftime=True))
-    if "precip" in ds_obs_full and "pr" not in ds_obs_full:
-        ds_obs_full = ds_obs_full.rename({"precip": "pr"})
+    if "precip" in ds_obs and "pr" not in ds_obs:
+        ds_obs = ds_obs.rename({"precip": "pr"})
 
     # Load historical model
-    logger.info("Loading historical model...")
-    ds_hist_full = xr.open_dataset(hist_path, decode_times=xr.coders.CFDatetimeCoder(use_cftime=True))
-
-    # Slice to calibration period
-    logger.info(f"Slicing to calibration period {calib_start}-{calib_end}...")
-    obs_years  = ds_obs_full.time.dt.year.values
-    hist_years = ds_hist_full.time.dt.year.values
-
-    ds_obs_cal  = ds_obs_full.isel(
-        time=np.where((obs_years  >= calib_start) & (obs_years  <= calib_end))[0]
+    logger.info("Loading historical model ...")
+    ds_hist_full = xr.open_dataset(
+        hist_file,
+        decode_times=xr.coders.CFDatetimeCoder(use_cftime=True),
     )
-    ds_hist_cal = ds_hist_full.isel(
-        time=np.where((hist_years >= calib_start) & (hist_years <= calib_end))[0]
-    )
-    logger.info(f"  Obs  calibration days : {len(ds_obs_cal.time):,}")
-    logger.info(f"  Hist calibration days : {len(ds_hist_cal.time):,}")
+
+    # Slice both to calibration period
+    logger.info(f"Slicing to calibration period {calib_start}-{calib_end} ...")
+    obs_years  = np.array([t.year for t in ds_obs.time.values])
+    hist_years = np.array([t.year for t in ds_hist_full.time.values])
+
+    obs_mask  = (obs_years  >= calib_start) & (obs_years  <= calib_end)
+    hist_mask = (hist_years >= calib_start) & (hist_years <= calib_end)
+
+    ds_obs_cal  = ds_obs.isel( time=np.where(obs_mask) [0])
+    ds_hist_cal = ds_hist_full.isel(time=np.where(hist_mask)[0])
+
+    logger.info(f"  CHIRPS cal days : {len(ds_obs_cal.time):,}")
+    logger.info(f"  Hist   cal days : {len(ds_hist_cal.time):,}")
+
+    if len(ds_obs_cal.time) == 0 or len(ds_hist_cal.time) == 0:
+        logger.error("  Calibration period overlap is empty — check calib-start/end.")
+        return False
 
     # Load future
-    logger.info(f"Loading future scenario ({scenario})...")
-    ds_future = xr.open_dataset(future_path, decode_times=xr.coders.CFDatetimeCoder(use_cftime=True))
+    logger.info(f"Loading future ({scenario}) ...")
+    ds_future = xr.open_dataset(
+        future_file,
+        decode_times=xr.coders.CFDatetimeCoder(use_cftime=True),
+    )
     logger.info(f"  Future days: {len(ds_future.time):,}")
 
-    # Run QM
-    logger.info(f"\nRunning {method} QM...")
-    da_corrected, transfers = apply_bias_correction_spatial(
+    # Apply QDM
+    logger.info("Applying QDM ...")
+    da_corrected, transfers = apply_qdm_spatial(
         obs_ds    = ds_obs_cal,
         hist_ds   = ds_hist_cal,
         future_ds = ds_future,
-        method    = method,
         pr_var    = "pr",
     )
 
     # Save output
-    out_file = output_path / f"pr_day_{MODEL}_{scenario}_{ENSEMBLE}_jakarta_bc_{method}.nc"
-    ds_out   = da_corrected.to_dataset(name="pr")
+    ds_out = da_corrected.to_dataset(name="pr")
     ds_out.attrs.update({
-        "title":           f"Bias-corrected HadGEM2-AO {scenario} precipitation",
-        "bias_correction": f"Quantile Mapping ({method})",
+        "title":           f"QDM bias-corrected {model} {scenario} precipitation",
+        "model":           model,
+        "ensemble":        ensemble,
+        "scenario":        scenario,
+        "bias_correction": "Quantile Delta Mapping (QDM) — Cannon et al. 2015",
         "reference_obs":   "CHIRPS v2.0",
         "calib_period":    f"{calib_start}-{calib_end}",
-        "model":           MODEL,
-        "scenario":        scenario,
-        "ensemble":        ENSEMBLE,
     })
-    logger.info("\nSaving corrected output...")
-    save_model_streaming(ds_out, out_file, f"{scenario} corrected")
+    logger.info("Saving corrected output ...")
+    save_model_streaming(ds_out, out_file, f"{model}/{scenario} QDM")
 
     # Optionally save transfer functions
-    if save_transfer:
-        tf_file = output_path / f"transfer_functions_{scenario}_{method}.pkl"
-        with open(tf_file, "wb") as f_pkl:
-            pickle.dump(transfers, f_pkl)
-        logger.info(f"  Transfer functions saved: {tf_file.name}")
+    if save_tf:
+        tf_path = output_path / f"transfer_functions_{model}_{scenario}_qdm.pkl"
+        with open(tf_path, "wb") as fp:
+            pickle.dump(transfers, fp)
+        logger.info(f"  Transfer functions -> {tf_path.name}")
 
-    # Summary
-    raw_mean  = float(ds_future["pr"].values[np.isfinite(ds_future["pr"].values)].mean())
+    # Make the summary
+    raw_vals  = ds_future["pr"].values
     corr_vals = da_corrected.values
+    raw_mean  = float(raw_vals[np.isfinite(raw_vals)].mean())
     corr_mean = float(corr_vals[np.isfinite(corr_vals)].mean())
+    nan_count = int(np.isnan(corr_vals).sum())
 
-    logger.info(f"{'='*42}")
+    logger.info("=" * 55)
     logger.info(f"DONE: {out_file.name}")
     logger.info(f"  Raw future mean  : {raw_mean:.2f} mm/day")
     logger.info(f"  Corrected mean   : {corr_mean:.2f} mm/day")
-    logger.info(f"  Output           : {out_file}")
-    logger.info(f"{'='*42}")
+    logger.info(f"  NaN cells        : {nan_count}")
+    logger.info("=" * 55)
 
-    ds_obs_full.close()
+    ds_obs.close()
     ds_hist_full.close()
     ds_future.close()
-
     return True
 
 
-# ===== Apply subcommand ====================
+# ===== CLI 'apply' subcommand =======================================================
 
 @cli.command("apply")
-@click.option(
-    "--obs",
-    default=str(DEFAULT_OUTPUT_DIR / f"chirps_v2_jakarta_{CHIRPS_START}_{CHIRPS_END}.nc"),
-    show_default=True,
-    help="Path to merged CHIRPS reference file.",
-)
-@click.option(
-    "--hist",
-    default=str(DEFAULT_OUTPUT_DIR / f"pr_day_{MODEL}_historical_{ENSEMBLE}_jakarta_bc_input.nc"),
-    show_default=True,
-    help="Path to historical model bc_input file.",
-)
-@click.option(
-    "--scenario",
-    required=True,
-    type=click.Choice(SCENARIOS + ["all"]),
-    help="RCP scenario to correct (rcp26 / rcp45 / rcp85 / all).",
-)
-@click.option(
-    "--output-dir",
-    default=str(DEFAULT_OUTPUT_DIR),
-    show_default=True,
-    help="Directory to save bias-corrected output.",
-)
-@click.option(
-    "--method",
-    default="empirical",
-    type=click.Choice(["empirical", "parametric"]),
-    show_default=True,
-    help="QM method: empirical (eQM) or parametric Gamma (pQM).",
-)
-@click.option(
-    "--calib-start", default=1981, show_default=True,
-    help="First year of calibration period.",
-)
-@click.option(
-    "--calib-end", default=2005, show_default=True,
-    help="Last year of calibration period.",
-)
-@click.option(
-    "--save-transfer", is_flag=True, default=False,
-    help="Save transfer functions as a .pkl file for inspection.",
-)
-def apply(obs, hist, scenario, output_dir, method,
-          calib_start, calib_end, save_transfer):
-    """
-    Run quantile mapping bias correction.
-
-    Use --scenario all to process rcp26, rcp45, and rcp85 in one go.
-    """
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    obs_path  = Path(obs)
-    hist_path = Path(hist)
-
-    scenarios_to_run = SCENARIOS if scenario == "all" else [scenario]
-
-    if scenario == "all":
-        logger.info(f"{'='*42}")
-        logger.info("Running ALL scenarios: rcp26, rcp45, rcp85")
-        logger.info(f"{'='*42}")
+@click.option("--model",    default="all",
+              type=click.Choice(list(MODELS.keys()) + ["all"]), show_default=True,
+              help="Which model to bias-correct, or 'all'.")
+@click.option("--scenario", default="all",
+              type=click.Choice(ALL_SCENARIOS + ["all"]), show_default=True,
+              help="Which SSP scenario to correct, or 'all'.")
+@click.option("--output-dir", default=str(DEFAULT_OUTPUT_DIR), show_default=True,
+              help="Directory containing prepared files and where output is written.")
+@click.option("--calib-start", default=CALIB_START, show_default=True,
+              help="First year of calibration period.")
+@click.option("--calib-end",   default=CALIB_END,   show_default=True,
+              help="Last year of calibration period.")
+@click.option("--save-transfer", is_flag=True, default=False,
+              help="Save fitted transfer functions as .pkl files.")
+def apply(model, scenario, output_dir, calib_start, calib_end, save_transfer):
+    output_path  = Path(output_dir)
+    models_to_run    = list(MODELS.keys()) if model    == "all" else [model]
+    scenarios_to_run = ALL_SCENARIOS       if scenario == "all" else [scenario]
 
     completed = []
     failed    = []
 
-    for scen in scenarios_to_run:
-        success = _run_one_scenario(
-            scenario     = scen,
-            obs_path     = obs_path,
-            hist_path    = hist_path,
-            output_path  = output_path,
-            method       = method,
-            calib_start  = calib_start,
-            calib_end    = calib_end,
-            save_transfer= save_transfer,
-        )
-        if success:
-            completed.append(scen)
-        else:
-            failed.append(scen)
+    for mdl in models_to_run:
+        for scen in scenarios_to_run:
+            if scen not in MODELS[mdl]["scenarios"]:
+                logger.info(f"Skipping {mdl}/{scen} — not in model scenario list")
+                continue
 
-    if len(scenarios_to_run) > 1:
-        logger.info(f"{'='*42}")
-        logger.info("ALL SCENARIOS COMPLETE")
-        logger.info(f"{'='*42}")
-        for scen in completed:
-            out = output_path / f"pr_day_{MODEL}_{scen}_{ENSEMBLE}_jakarta_bc_{method}.nc"
-            logger.info(f"  {scen} -> {out.name}")
-        if failed:
-            logger.warning(f"  Failed: {failed}")
+            logger.info(f"\n{'#' * 55}")
+            logger.info(f"# Model: {mdl}  |  Scenario: {scen}")
+            logger.info(f"{'#' * 55}")
+
+            ok = _run_qdm(
+                model       = mdl,
+                scenario    = scen,
+                output_path = output_path,
+                calib_start = calib_start,
+                calib_end   = calib_end,
+                save_tf     = save_transfer,
+            )
+            if ok:
+                completed.append((mdl, scen))
+            else:
+                failed.append((mdl, scen))
+
+    logger.info("\n" + "=" * 55)
+    logger.info(f"ALL DONE — {len(completed)} completed, {len(failed)} failed")
+    logger.info("=" * 55)
+    for mdl, scen in completed:
+        out = Path(output_dir) / f"pr_day_{mdl}_{scen}_{MODELS[mdl]['ensemble']}_jakarta_qdm.nc"
+        logger.info(f"  OK  {mdl:<15} {scen:<10} -> {out.name}")
+    if failed:
+        logger.warning("Failed:")
+        for mdl, scen in failed:
+            logger.warning(f"  !! {mdl:<15} {scen}")
 
 
 if __name__ == "__main__":
