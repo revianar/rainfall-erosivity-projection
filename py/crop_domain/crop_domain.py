@@ -9,6 +9,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_ROOT    = PROJECT_ROOT.parent
 
 JAKARTA_BBOX = {
     "lat_min": -8.75,
@@ -184,13 +185,13 @@ def process_scenario(
 @click.command()
 @click.option(
     "--input-dir",
-    default=str(PROJECT_ROOT / "CMIP"),
+    default=str(DATA_ROOT / "CMIP6"),
     show_default=True,
     help="Directory containing raw CMIP6 NetCDF files.",
 )
 @click.option(
     "--output-dir",
-    default=str(PROJECT_ROOT / "py" / "esgf" / "processed"),
+    default=str(DATA_ROOT / "Rainfall-Erosivity" / "py" / "data" / "processed"),
     show_default=True,
     help="Directory to save merged + cropped output files.",
 )
@@ -245,7 +246,7 @@ def main(input_dir: str, output_dir: str, model: str, scenario: str, pr_var: str
                 skipped.append((mdl, scen))
                 continue
 
-            logger.info(f"\n{'=' * 60}")
+            logger.info(f"{'=' * 60}")
             logger.info(f"Model: {mdl}  |  Scenario: {scen}")
             logger.info(f"{'=' * 60}")
 
