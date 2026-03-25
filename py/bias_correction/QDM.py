@@ -11,11 +11,12 @@ import netCDF4 as nc4
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_ROOT    = PROJECT_ROOT.parent
 
-DEFAULT_CHIRPS_DIR  = PROJECT_ROOT / "CHIRPS"
-DEFAULT_PROC_DIR    = PROJECT_ROOT / "Rainfall-Erosivity" / "py" / "data" / "processed"
-DEFAULT_OUTPUT_DIR  = PROJECT_ROOT / "Rainfall-Erosivity" / "py" / "data" / "bias_corrected"
+DEFAULT_CHIRPS_DIR  = DATA_ROOT / "CHIRPS"
+DEFAULT_PROC_DIR    = DATA_ROOT / "Rainfall-Erosivity" / "py" / "data" / "processed"
+DEFAULT_OUTPUT_DIR  = DATA_ROOT / "Rainfall-Erosivity" / "py" / "data" / "bias_corrected"
 
 MODELS = {
     "MRI-ESM2-0": {
@@ -465,7 +466,7 @@ def prepare(chirps_dir, processed_dir, output_dir, model, chirps_start, chirps_e
 
     for mdl in models_to_run:
         cfg = MODELS[mdl]
-        logger.info(f"\n{'=' * 50}")
+        logger.info(f"{'=' * 50}")
         logger.info(f"Model: {mdl}  (ensemble={cfg['ensemble']}  grid={cfg['grid']})")
         logger.info(f"{'=' * 50}")
 
@@ -487,11 +488,11 @@ def prepare(chirps_dir, processed_dir, output_dir, model, chirps_start, chirps_e
             ds = load_model_lazy(src_file, f"{mdl}/{scen}")
             save_model_streaming(ds, dst_file, f"{mdl}/{scen}")
 
-    logger.info("\n" + "=" * 50)
+    logger.info("=" * 50)
     logger.info("prepare DONE — files in bias_corrected/:")
     logger.info("=" * 50)
     for f in sorted(out_path.glob("*.nc")):
-        logger.info(f"  {f.name}")
+        logger.info(f"  {f.name}")  
     logger.info(
         "\nNext step:\n"
         "  python QDM.py apply --model all --scenario all"
