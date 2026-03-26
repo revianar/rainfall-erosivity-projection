@@ -14,27 +14,27 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT_DIR  = PROJECT_ROOT / "py" / "data" / "bias_corrected"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "py" / "results" / "indices"
 
-# ===== CMIP6 registry =========================================================
+# ===== CMIP6 registry ====================
 
 MODELS = {
     "MRI-ESM2-0": {
         "ensemble":  "r1i1p1f1",
         "grid":      "gn",
-        "scenarios": ["ssp126", "ssp245", "ssp585"],
+        "scenarios": ["historical", "ssp126", "ssp245", "ssp585"],
     },
     "EC-Earth3": {
         "ensemble":  "r1i1p1f1",
         "grid":      "gr",
-        "scenarios": ["ssp126", "ssp245", "ssp585"],
+        "scenarios": ["historical", "ssp126", "ssp245", "ssp585"],
     },
     "CNRM-CM6-1": {
         "ensemble":  "r1i1p1f2",
         "grid":      "gr",
-        "scenarios": ["ssp126", "ssp245", "ssp585"],
+        "scenarios": ["historical", "ssp126", "ssp245", "ssp585"],
     },
 }
 
-ALL_SCENARIOS = ["ssp126", "ssp245", "ssp585"]
+ALL_SCENARIOS = ["historical", "ssp126", "ssp245", "ssp585"]
 
 HIST_PERIOD = (1950, 2014)
 NEAR_PERIOD = (2021, 2050)
@@ -43,7 +43,7 @@ FAR_PERIOD  = (2071, 2100)
 WET_DAY_THRESHOLD = 1.0   # mm/day
 
 
-# ===== Safe year extraction ===================================================
+# ===== Safe year extraction ====================
 
 def _get_years(da: xr.DataArray) -> np.ndarray:
     """
@@ -171,7 +171,7 @@ def compute_all_indices(pr: xr.DataArray, model: str, scenario: str) -> xr.Datas
     return ds
 
 
-# ===== Period utilities =======================================================
+# ===== Period utilities ====================
 
 def compute_period_mean(ds_indices: xr.Dataset, period: tuple) -> xr.Dataset:
     """Mean of all indices over a given year range."""
@@ -199,7 +199,7 @@ def compute_change_signal(
     return delta
 
 
-# ===== Single-scenario processor ==============================================
+# ===== Single-scenario processor ====================
 
 def process_one(
     model:       str,
@@ -286,7 +286,7 @@ def process_one(
     return True
 
 
-# ===== CLI ====================================================================
+# ===== CLI ====================
 
 @click.command()
 @click.option(
@@ -361,8 +361,8 @@ def main(input_dir: str, output_dir: str, model: str, scenario: str):
             else:
                 skipped.append((mdl, scenario))
 
-    # ===== Final summary ======================================================
-    logger.info("\n" + "=" * 60)
+    # ===== Final summary ====================
+    logger.info("=" * 60)
     logger.info(f"DONE — {len(completed)} file(s) written, {len(skipped)} skipped")
     logger.info("=" * 60)
     for mdl, scenario in completed:
