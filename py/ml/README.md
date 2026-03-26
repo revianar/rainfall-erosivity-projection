@@ -99,5 +99,5 @@ For each model × scenario:
   `R_bols_{model}_{scenario}_{ensemble}_jakarta.nc`
 
 Variable names expected inside each file:
-  `R_bols          : raw Bols R-factor  [MJ·mm·ha⁻¹·h⁻¹·yr⁻¹]`
-  `R_bols_weighted : weighted ensemble R (present if erosivity_rf.py ran ensemble aggregation), scaled separately if present`
+`R_bols          : raw Bols R-factor  [MJ·mm·ha⁻¹·h⁻¹·yr⁻¹]`
+`R_bols_weighted : weighted ensemble R (present if erosivity_rf.py ran ensemble aggregation), scaled separately if present`
