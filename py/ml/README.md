@@ -17,7 +17,7 @@ residual distributional characteristics after QDM, so applying it to that model'
 Bols (1978) Indonesia calibration:
 
   `R = α × PRCPTOT^(1 - β) × Rx1day^β`
-    `= 6.19 × PRCPTOT^0.24 × Rx1day^0.76`
+  `R = 6.19 × PRCPTOT^0.24 × Rx1day^0.76`
 
 This is used as the *label* during training. The RF then learns to reproduce
 this relationship from the full feature set, capturing nonlinear interactions
@@ -98,6 +98,6 @@ For each model × scenario:
 
   `R_bols_{model}_{scenario}_{ensemble}_jakarta.nc`
 
-  Variable names expected inside each file:
-   `R_bols        : raw Bols R-factor  [MJ·mm·ha⁻¹·h⁻¹·yr⁻¹]`
-   `R_bols_weighted : weighted ensemble R (present if erosivity_rf.py ran ensemble aggregation), scaled separately if present`
+Variable names expected inside each file:
+  `R_bols          : raw Bols R-factor  [MJ·mm·ha⁻¹·h⁻¹·yr⁻¹]`
+  `R_bols_weighted : weighted ensemble R (present if erosivity_rf.py ran ensemble aggregation), scaled separately if present`
