@@ -80,8 +80,8 @@ Because the bias is systematic, the relative climate change signal (future R / h
 ## Outputs
 
 For each model × scenario:
- `R_bols_raw_{model}_{scenario}_{ensemble}.nc`       ← copy of RF output, unchanged
- `R_gloreda_scaled_{model}_{scenario}_{ensemble}.nc` ← scaled version
+`R_bols_raw_{model}_{scenario}_{ensemble}.nc`       ← copy of RF output, unchanged
+`R_gloreda_scaled_{model}_{scenario}_{ensemble}.nc` ← scaled version
 
 ## Usage
 
