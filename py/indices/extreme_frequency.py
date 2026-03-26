@@ -4,6 +4,8 @@ import xarray as xr
 import pandas as pd
 from scipy import stats
 from pathlib import Path
+from joblib import Parallel, delayed
+from typing import Optional
 import logging
 import click
 
@@ -15,8 +17,29 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INDICES_DIR = PROJECT_ROOT / "py" / "results" / "indices"
 DEFAULT_OUTPUT_DIR  = PROJECT_ROOT / "py" / "results" / "extreme_freq"
 
-MODEL    = "HadGEM2-AO"
-SCENARIOS = ["historical", "rcp26", "rcp45", "rcp85"]
+MODELS = {
+    "MRI-ESM2-0": {
+        "ensemble":  "r1i1p1f1",
+        "grid":      "gn",
+        "scenarios": ["historical", "ssp126", "ssp245", "ssp585"],
+    },
+    "EC-Earth3": {
+        "ensemble":  "r1i1p1f1",
+        "grid":      "gr",
+        "scenarios": ["historical", "ssp126", "ssp245", "ssp585"],
+    },
+    "CNRM-CM6-1": {
+        "ensemble":  "r1i1p1f2",
+        "grid":      "gr",
+        "scenarios": ["historical", "ssp126", "ssp245", "ssp585"],
+    },
+}
+
+ALL_SCENARIOS = ["historical", "ssp126", "ssp245", "ssp585"]
+
+HIST_PERIOD = (1950, 2014)
+NEAR_PERIOD = (2021, 2050)
+FAR_PERIOD  = (2071, 2100)
 
 # Return periods to compute [years]
 RETURN_PERIODS = [2, 5, 10, 25, 50, 100]
@@ -29,7 +52,7 @@ JAKARTA_FLOOD_THRESHOLDS = {
 }
 
 
-# ===== L-moments ==============================================================
+# ===== L-moments ====================
 
 def lmoments(x: np.ndarray) -> tuple:
     n        = len(x)
@@ -57,7 +80,7 @@ def lmoments(x: np.ndarray) -> tuple:
     return l1, l2, l3, l4
 
 
-# ===== GEV fitting ============================================================
+# ===== GEV fitting ====================
 
 def fit_gev_lmoments(ams: np.ndarray) -> dict:
     l1, l2, l3, _ = lmoments(ams)
@@ -114,28 +137,41 @@ def bootstrap_return_levels(
     return_periods: list = RETURN_PERIODS,
     n_bootstrap: int = 500,
     ci: float = 0.95,
-    method: str = "mle",
+    method: str = "lmoments",
 ) -> dict:
-    n          = len(ams)
+
+    n = len(ams)
     rl_samples = {T: [] for T in return_periods}
 
-    for _ in range(n_bootstrap):
-        sample = np.random.choice(ams, size=n, replace=True)
+    # Pre-generate all bootstrap samples
+    samples = np.random.choice(ams, size=(n_bootstrap, n), replace=True)
+
+    for sample in samples:
         try:
-            params = fit_gev_mle(sample) if method == "mle" else fit_gev_lmoments(sample)
-            rls    = compute_return_levels(
+            # Use L-moments for speed
+            params = (
+                fit_gev_lmoments(sample)
+                if method == "lmoments"
+                else fit_gev_mle(sample)
+            )
+
+            rls = compute_return_levels(
                 params["loc"], params["scale"], params["shape"], return_periods
             )
+
             for T, rl in rls.items():
                 rl_samples[T].append(rl)
+
         except Exception:
             pass
 
-    alpha      = (1 - ci) / 2
+    alpha = (1 - ci) / 2
     ci_results = {}
+
     for T in return_periods:
         arr = np.array(rl_samples[T])
         arr = arr[np.isfinite(arr)]
+
         if len(arr) > 0:
             ci_results[T] = (
                 float(np.percentile(arr, alpha * 100)),
@@ -144,11 +180,11 @@ def bootstrap_return_levels(
             )
         else:
             ci_results[T] = (np.nan, np.nan, np.nan)
+
     return ci_results
 
 
-# ===== Threshold exceedance ===================================================
-
+# ===== Threshold exceedance ====================
 def exceedance_probability(
     loc: float,
     scale: float,
@@ -172,17 +208,30 @@ def _analyse_ams(
     ams: np.ndarray,
     return_periods: list,
     n_bootstrap: int,
-) -> dict | None:
+) -> Optional[dict]:
+
     ams = ams[np.isfinite(ams) & (ams > 0)]
-    if len(ams) < 10:
+
+    # Early skip
+    if len(ams) < 10 or np.all(ams <= 0):
         return None
 
     try:
+        # Keep MLE for main fit due to better performance in small samples,
+        # but use L-moments for bootstrap to save time
         params = fit_gev_mle(ams)
         loc, scale, shape = params["loc"], params["scale"], params["shape"]
 
         rls = compute_return_levels(loc, scale, shape, return_periods)
-        ci  = bootstrap_return_levels(ams, return_periods, n_bootstrap, method="mle")
+
+        # Faster bootstrap using L-moments,
+        # since MLE can be slow and unstable for small samples
+        ci = bootstrap_return_levels(
+            ams,
+            return_periods,
+            n_bootstrap,
+            method="lmoments"
+        )
 
         exceedance = {
             name: exceedance_probability(loc, scale, shape, thresh)
@@ -190,11 +239,14 @@ def _analyse_ams(
         }
 
         return {
-            "loc": loc, "scale": scale, "shape": shape,
+            "loc": loc,
+            "scale": scale,
+            "shape": shape,
             "return_levels": rls,
             "ci": ci,
             "exceedance": exceedance,
         }
+
     except Exception:
         return None
 
@@ -205,9 +257,9 @@ def spatial_frequency_analysis(
     return_periods: list = RETURN_PERIODS,
     n_bootstrap: int = 500,
 ) -> xr.Dataset:
+
     da = ds_indices[variable]
 
-    # Determine spatial structure
     has_lat = "lat" in da.dims
     has_lon = "lon" in da.dims
 
@@ -215,60 +267,66 @@ def spatial_frequency_analysis(
         nlat = len(da.lat)
         nlon = len(da.lon)
         coords = {"lat": da.lat, "lon": da.lon}
-        dims   = ["lat", "lon"]
+        dims = ["lat", "lon"]
         shape_2d = (nlat, nlon)
     else:
-        # Single grid cell — treat as (1, 1) for uniform code path, unwrap at end
         nlat, nlon = 1, 1
         coords = {}
-        dims   = []
+        dims = []
         shape_2d = (1, 1)
 
-    # Output arrays
+    # ⚡ Extract values ONCE (important speedup)
+    data = da.values
+
+    logger.info(f"Running GEV analysis for {variable} (parallel)...")
+
+    # Build index list
+    indices = [(i, j) for i in range(nlat) for j in range(nlon)]
+
+    # Parallel execution
+    results = Parallel(n_jobs=-1)(
+        delayed(_analyse_ams)(
+            data[:, i, j] if has_lat else data,
+            return_periods,
+            n_bootstrap
+        )
+        for (i, j) in indices
+    )
+
+    # Initialize outputs
     gev_loc   = np.full(shape_2d, np.nan)
     gev_scale = np.full(shape_2d, np.nan)
     gev_shape = np.full(shape_2d, np.nan)
-    rl_data   = {T: np.full(shape_2d, np.nan) for T in return_periods}
-    rl_lower  = {T: np.full(shape_2d, np.nan) for T in return_periods}
-    rl_upper  = {T: np.full(shape_2d, np.nan) for T in return_periods}
-    exceed    = {k: np.full(shape_2d, np.nan) for k in JAKARTA_FLOOD_THRESHOLDS}
 
-    logger.info(f"  Running GEV analysis for {variable} "
-                f"({'spatial' if has_lat else 'single cell'})...")
+    rl_data  = {T: np.full(shape_2d, np.nan) for T in return_periods}
+    rl_lower = {T: np.full(shape_2d, np.nan) for T in return_periods}
+    rl_upper = {T: np.full(shape_2d, np.nan) for T in return_periods}
+    exceed   = {k: np.full(shape_2d, np.nan) for k in JAKARTA_FLOOD_THRESHOLDS}
 
-    for i in range(nlat):
-        for j in range(nlon):
-            if has_lat and has_lon:
-                ams = da.values[:, i, j]
-            else:
-                ams = da.values   # (year,)
+    # Fill arrays
+    for idx, result in zip(indices, results):
+        i, j = idx
+        if result is None:
+            continue
 
-            result = _analyse_ams(ams, return_periods, n_bootstrap)
-            if result is None:
-                continue
+        gev_loc[i, j]   = result["loc"]
+        gev_scale[i, j] = result["scale"]
+        gev_shape[i, j] = result["shape"]
 
-            gev_loc[i, j]   = result["loc"]
-            gev_scale[i, j] = result["scale"]
-            gev_shape[i, j] = result["shape"]
+        for T in return_periods:
+            rl_data[T][i, j]  = result["return_levels"][T]
+            rl_lower[T][i, j] = result["ci"][T][0]
+            rl_upper[T][i, j] = result["ci"][T][2]
 
-            for T in return_periods:
-                rl_data[T][i, j]  = result["return_levels"][T]
-                rl_lower[T][i, j] = result["ci"][T][0]
-                rl_upper[T][i, j] = result["ci"][T][2]
+        for name in JAKARTA_FLOOD_THRESHOLDS:
+            exceed[name][i, j] = result["exceedance"][name]
 
-            for name in JAKARTA_FLOOD_THRESHOLDS:
-                exceed[name][i, j] = result["exceedance"][name]
-
-        if has_lat and i % 3 == 0:
-            logger.info(f"    Row {i+1}/{nlat}")
-
-    # Build output Dataset
+    # Output builder (unchanged)
     def _da(arr, long_name, units):
         if has_lat and has_lon:
             return xr.DataArray(arr, coords=coords, dims=dims,
                                 attrs={"long_name": long_name, "units": units})
         else:
-            # Return scalar DataArray for single-cell case
             return xr.DataArray(float(arr[0, 0]),
                                 attrs={"long_name": long_name, "units": units})
 
@@ -302,10 +360,11 @@ def spatial_frequency_analysis(
         "return_periods":    str(return_periods),
         "bootstrap_samples": n_bootstrap,
     })
+
     return ds_out
 
 
-# ===== CLI ====================================================================
+# ===== CLI ====================
 
 @click.command()
 @click.option(
@@ -321,18 +380,25 @@ def spatial_frequency_analysis(
     help="Directory to save extreme frequency output files.",
 )
 @click.option(
+    "--model",
+    default="all",
+    type=click.Choice(list(MODELS.keys()) + ["all"]),
+    show_default=True,
+    help="Which CMIP6 model to process, or 'all'.",
+)
+@click.option(
     "--scenario",
     default="all",
-    type=click.Choice(SCENARIOS + ["all"]),
+    type=click.Choice(ALL_SCENARIOS + ["all"]),
     show_default=True,
     help="Scenario to process, or 'all' for every scenario.",
 )
 @click.option(
     "--variable",
-    default="Rx1day",
-    type=click.Choice(["Rx1day", "Rx3day", "Rx5day"]),
+    default="all",
+    type=click.Choice(["Rx1day", "Rx3day", "Rx5day", "all"]),
     show_default=True,
-    help="Annual maxima variable to analyse.",
+    help="Annual maxima variable to analyse, or 'all' for every variable.",
 )
 @click.option(
     "--n-bootstrap",
@@ -340,90 +406,102 @@ def spatial_frequency_analysis(
     show_default=True,
     help="Number of bootstrap resamples for confidence intervals.",
 )
-def main(indices_dir, output_dir, scenario, variable, n_bootstrap):
+def main(indices_dir, output_dir, model, scenario, variable, n_bootstrap):
     indices_path = Path(indices_dir)
     out_path     = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
     if not indices_path.exists():
         logger.error(f"Indices directory not found: {indices_path}")
-        logger.error("Run precipitation_indices.py --scenario all first.")
+        logger.error("Run precipitation_indices.py --model all --scenario all first.")
         sys.exit(1)
 
-    scenarios_to_run = SCENARIOS if scenario == "all" else [scenario]
+    models_to_run    = list(MODELS.keys()) if model    == "all" else [model]
+    scenarios_to_run = ALL_SCENARIOS       if scenario == "all" else [scenario]
+    variables_to_run = ["Rx1day", "Rx3day", "Rx5day"] if variable == "all" else [variable]
 
     completed = []
-    failed    = []
+    skipped   = []
 
-    for scen in scenarios_to_run:
-        # NOTE
-        # Historical bias-correction asymmetry:
-        # For 'historical', precipitation_indices.py reads the raw (uncorrected) HadGEM2-AO file (jakarta_bc_input.nc), NOT a bias-corrected file.
-        # RCP scenarios use bias-corrected output (jakarta_bc_empirical.nc).
-        # This means historical GEV parameters are fitted on raw model data while RCP return levels are fitted on bias-corrected data.  
-        # When comparing historical vs. future return levels, keep this asymmetry in mind:
-        #   - Use historical results as a model-world baseline only.
-        #   - For absolute comparisons against observations, prefer CHIRPS-derived return levels instead.
-        fname = f"{MODEL}_{scen}_indices_jakarta.nc"
-        fpath = indices_path / fname
+    for mdl in models_to_run:
+        ensemble = MODELS[mdl]["ensemble"]
 
-        if not fpath.exists():
-            logger.warning(f"  File not found: {fpath} — skipping {scen}")
-            failed.append(scen)
-            continue
+        for scenario in scenarios_to_run:
+            if scenario not in MODELS[mdl]["scenarios"]:
+                logger.info(f"\nSkipping {mdl}/{scenario} — not in model scenario list.")
+                skipped.append((mdl, scenario, "all"))
+                continue
 
-        logger.info(f"{'='*55}")
-        logger.info(f"Processing: {scen} — {variable}")
-        logger.info(f"{'='*55}")
+            # Input filename matches precipitation_indices.py output convention
+            fname = f"{mdl}_{scenario}_{ensemble}_indices_jakarta.nc"
+            fpath = indices_path / fname
 
-        ds = xr.open_dataset(fpath)
+            if not fpath.exists():
+                logger.warning(f"  File not found: {fpath} — skipping {mdl}/{scenario}")
+                skipped.append((mdl, scenario, "all"))
+                continue
 
-        if variable not in ds:
-            logger.error(f"  Variable '{variable}' not found in {fname}")
-            logger.error(f"  Available: {list(ds.data_vars)}")
-            failed.append(scen)
+            ds = xr.open_dataset(
+                fpath,
+                decode_times=xr.coders.CFDatetimeCoder(use_cftime=True),
+            )
+
+            for var in variables_to_run:
+                logger.info(f"{'='*55}")
+                logger.info(f"Model: {mdl}  |  Scenario: {scenario}  |  Variable: {var}")
+                logger.info(f"{'='*55}")
+
+                if var not in ds:
+                    logger.error(f"  Variable '{var}' not found in {fname}")
+                    logger.error(f"  Available: {list(ds.data_vars)}")
+                    skipped.append((mdl, scenario, var))
+                    continue
+
+                n_years = len(ds["year"]) if "year" in ds.coords else len(ds[var])
+                logger.info(f"  Years in record  : {n_years}")
+                logger.info(f"  Bootstrap samples: {n_bootstrap}")
+
+                ds_out = spatial_frequency_analysis(
+                    ds,
+                    variable       = var,
+                    return_periods = RETURN_PERIODS,
+                    n_bootstrap    = n_bootstrap,
+                )
+                ds_out.attrs.update({
+                    "model":    mdl,
+                    "ensemble": ensemble,
+                    "scenario": scenario,
+                })
+
+                out_file = out_path / f"{mdl}_{scenario}_{ensemble}_{var}_extreme_freq_jakarta.nc"
+                ds_out.to_netcdf(
+                    out_file,
+                    encoding={v: {"dtype": "float32"} for v in ds_out.data_vars
+                              if ds_out[v].ndim > 0},
+                )
+                logger.info(f"  Saved: {out_file.name}")
+
+                for T in [10, 50, 100]:
+                    key = f"{var}_RL{T}yr"
+                    if key in ds_out:
+                        mean_rl = float(np.nanmean(ds_out[key].values))
+                        logger.info(f"  {T}-yr return level (mean): {mean_rl:.1f} mm")
+
+                completed.append((mdl, scenario, var))
+
             ds.close()
-            continue
-
-        n_years = len(ds["year"]) if "year" in ds.coords else len(ds[variable])
-        logger.info(f"  Years in record : {n_years}")
-        logger.info(f"  Bootstrap samples: {n_bootstrap}")
-
-        ds_out = spatial_frequency_analysis(
-            ds,
-            variable     = variable,
-            return_periods = RETURN_PERIODS,
-            n_bootstrap  = n_bootstrap,
-        )
-        ds_out.attrs["scenario"] = scen
-
-        out_file = out_path / f"{MODEL}_{scen}_{variable}_extreme_freq_jakarta.nc"
-        ds_out.to_netcdf(
-            out_file,
-            encoding={v: {"dtype": "float32"} for v in ds_out.data_vars
-                      if ds_out[v].ndim > 0},
-        )
-        logger.info(f"  Saved: {out_file.name}")
-
-        # Quick summary of key return levels
-        for T in [10, 50, 100]:
-            key = f"{variable}_RL{T}yr"
-            if key in ds_out:
-                val = ds_out[key].values
-                mean_rl = float(np.nanmean(val))
-                logger.info(f"  {T}-yr return level (mean): {mean_rl:.1f} mm")
-
-        ds.close()
-        completed.append(scen)
 
     logger.info(f"{'='*55}")
-    logger.info(f"DONE  —  {len(completed)} scenario(s) processed")
+    logger.info(f"DONE — {len(completed)} combination(s) processed, {len(skipped)} skipped")
     logger.info(f"{'='*55}")
-    for scen in completed:
-        out = out_path / f"{MODEL}_{scen}_{variable}_extreme_freq_jakarta.nc"
-        logger.info(f"  {scen:<12} -> {out.name}")
-    if failed:
-        logger.warning(f"  Skipped : {failed}")
+    for mdl, scenario, var in completed:
+        ensemble = MODELS[mdl]["ensemble"]
+        out = out_path / f"{mdl}_{scenario}_{ensemble}_{var}_extreme_freq_jakarta.nc"
+        logger.info(f"  OK  {mdl:<15} {scenario:<12} {var:<8} -> {out.name}")
+    if skipped:
+        logger.info("Skipped:")
+        for item in skipped:
+            logger.info(f"  --  {item[0]:<15} {item[1]:<12} {item[2]}")
     logger.info(f"\nOutput directory: {out_path}")
 
 
