@@ -16,7 +16,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ===== Paths ==================================================================
+# ===== Paths ====================
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_ROOT     = PROJECT_ROOT.parent
@@ -26,23 +26,23 @@ DEFAULT_BC_DIR       = PROJECT_ROOT / "py" / "data" / "bias_corrected"
 DEFAULT_RESULTS_DIR  = PROJECT_ROOT / "py" / "results"
 DEFAULT_CHIRPS_DIR   = DATA_ROOT / "CHIRPS"
 
-# ===== CMIP6 registry =========================================================
+# ===== CMIP6 registry ====================
 
 MODELS = {
     "MRI-ESM2-0": {
         "ensemble":  "r1i1p1f1",
         "grid":      "gn",
-        "scenarios": ["ssp126", "ssp245", "ssp585"],
+        "scenarios": ["historical", "ssp126", "ssp245", "ssp585"],
     },
     "EC-Earth3": {
         "ensemble":  "r1i1p1f1",
         "grid":      "gr",
-        "scenarios": ["ssp126", "ssp245", "ssp585"],
+        "scenarios": ["historical", "ssp126", "ssp245", "ssp585"],
     },
     "CNRM-CM6-1": {
         "ensemble":  "r1i1p1f2",
         "grid":      "gr",
-        "scenarios": ["ssp126", "ssp245", "ssp585"],
+        "scenarios": ["historical", "ssp126", "ssp245", "ssp585"],
     },
 }
 
@@ -51,7 +51,7 @@ CALIB_END   = 2014
 
 WET_DAY_THRESHOLD = 1.0   # mm/day
 
-# ===== Metric weights — motivated by R-factor exponent sensitivity =============
+# ===== Metric weights used by R-factor exponent sensitivity ====================
 #
 # R = 6.19 * PRCPTOT^0.76 * (Rx1day / SDII)^0.1
 #
@@ -72,10 +72,10 @@ METRIC_WEIGHTS = {
 assert abs(sum(METRIC_WEIGHTS.values()) - 1.0) < 1e-9, "Metric weights must sum to 1.0"
 
 
-# ===== Safe year extraction ===================================================
+# ===== Safe year extraction ====================
 
 def _get_years(da: xr.DataArray) -> np.ndarray:
-    """Extract integer years — works with cftime and numpy datetime64."""
+    """Extract integer years. This works with cftime and numpy datetime64."""
     time_vals = da.time.values
     if hasattr(time_vals[0], "year"):
         return np.array([t.year for t in time_vals])
@@ -83,17 +83,16 @@ def _get_years(da: xr.DataArray) -> np.ndarray:
 
 
 def _get_months(da: xr.DataArray) -> np.ndarray:
-    """Extract integer months — works with cftime and numpy datetime64."""
+    """Extract integer months. Thisworks with cftime and numpy datetime64."""
     time_vals = da.time.values
     if hasattr(time_vals[0], "month"):
         return np.array([t.month for t in time_vals])
     return pd.DatetimeIndex(time_vals).month.values
 
 
-# ===== ETCCDI index computation ===============================================
-# These are the same implementations as precipitation_indices.py
-# duplicated here intentionally so this module is fully self-contained
-# and importable without depending on the CLI scripts.
+# ===== ETCCDI index computation ====================
+# These are the same implementations as precipitation_indices.py duplicated here intentionally
+# so this module is fully self-contained and importable without depending on the CLI scripts.
 
 def _resample_yearly(da: xr.DataArray, func: str) -> xr.DataArray:
     """Cftime-safe yearly resampling via explicit year-loop groupby."""
@@ -184,7 +183,7 @@ def _extract_center_cell(ds: xr.Dataset, pr_var: str = "pr") -> xr.DataArray:
     return pr_cell
 
 
-# ===== Data loading ===========================================================
+# ===== Data loading ====================
 
 def _load_and_slice(
     fpath:      Path,
@@ -225,7 +224,7 @@ def _load_and_slice(
     return ds
 
 
-# ===== Skill metric computation ===============================================
+# ===== Skill metric computation ====================
 
 def _nmae_skill(model_vals: np.ndarray, obs_vals: np.ndarray) -> float:
     """
@@ -240,7 +239,7 @@ def _nmae_skill(model_vals: np.ndarray, obs_vals: np.ndarray) -> float:
     model_mean = float(np.nanmean(model_vals))
 
     if abs(obs_mean) < 1e-9:
-        # Observed mean is effectively zero — skill undefined, return 0
+        # If observed mean is effectively zero or skill undefined, return 0
         return 0.0
 
     nmae  = abs(model_mean - obs_mean) / abs(obs_mean)
@@ -254,11 +253,9 @@ def _seasonal_corr_skill(
 ) -> float:
     """
     Pearson correlation between model and observed 12-month climatology.
-    Captures whether the model reproduces the phase and amplitude of the
-    annual precipitation cycle (monsoon onset/withdrawal timing).
+    Captures whether the model reproduces the phase and amplitude of the annual precipitation cycle (monsoon onset/withdrawal timing).
 
-    Returns r clipped to [0, 1] — negative correlations score 0 since a
-    model with inverted seasonality is worse than useless.
+    Returns r clipped to [0, 1] — negative correlations score 0 since a model with inverted seasonality is worse than useless.
     """
     valid = np.isfinite(model_climatology) & np.isfinite(obs_climatology)
     if valid.sum() < 3:
@@ -276,16 +273,13 @@ def _compute_skill_scores(
     """
     Compute per-metric skill scores for one model against CHIRPS.
 
-    Parameters
-    ----------
+    Parameters:
     model_indices     : output of _compute_indices() for the model
     obs_indices       : output of _compute_indices() for CHIRPS
     model_climatology : 12-element monthly climatology array for model
     obs_climatology   : 12-element monthly climatology array for CHIRPS
 
-    Returns
-    -------
-    dict of {metric_name: skill_score}  and raw bias info for the CSV
+    Returns dict of {metric_name: skill_score}  and raw bias info for the CSV
     """
     scores = {}
     details = {}
@@ -354,7 +348,7 @@ def _composite_score(skill_scores: dict) -> float:
     ))
 
 
-# ===== Main validation routine ================================================
+# ===== Main validation routine ====================
 
 def compute_ensemble_weights(
     raw_dir:     Path = DEFAULT_RAW_DIR,
@@ -368,8 +362,7 @@ def compute_ensemble_weights(
     Full ensemble validation pipeline. Computes skill scores and weights for
     both raw and QDM-corrected historical model runs against CHIRPS.
 
-    Parameters
-    ----------
+    Parameters:
     raw_dir     : directory containing crop_domain.py outputs
     bc_dir      : directory containing QDM.py outputs + CHIRPS file
     results_dir : where to save ensemble_weights.json and metrics CSV
@@ -377,9 +370,7 @@ def compute_ensemble_weights(
     calib_end   : last year of validation period
     save        : if True, write JSON and CSV to results_dir
 
-    Returns
-    -------
-    dict with keys 'raw' and 'bc', each mapping model name -> weight (float)
+    Returns dict with keys 'raw' and 'bc', each mapping model name -> weight (float)
     Example:
         {
             "raw": {"MRI-ESM2-0": 0.41, "EC-Earth3": 0.33, "CNRM-CM6-1": 0.26},
@@ -389,7 +380,7 @@ def compute_ensemble_weights(
     results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    # ===== Load CHIRPS ========================================================
+    # ===== Load CHIRPS ====================
     logger.info("=" * 65)
     logger.info("Loading CHIRPS observations ...")
     logger.info("=" * 65)
@@ -415,7 +406,7 @@ def compute_ensemble_weights(
         f"wet-days/yr={float(obs_indices['WDF'].mean()):.0f}"
     )
 
-    # ===== Process each model =================================================
+    # ===== Process each model ====================
     all_rows   = []   # for the metrics CSV
     raw_scores = {}   # composite S_m before QDM
     bc_scores  = {}   # composite S_m after QDM
@@ -492,7 +483,7 @@ def compute_ensemble_weights(
             ds.close()
         ds_chirps.close()
 
-    # ===== Normalise to weights ===============================================
+    # ===== Normalise to weights ====================
     logger.info("=" * 65)
     logger.info("Normalising composite scores to ensemble weights ...")
     logger.info("=" * 65)
@@ -500,7 +491,7 @@ def compute_ensemble_weights(
     def _normalise(scores: dict) -> dict:
         total = sum(scores.values())
         if total < 1e-9:
-            # All models failed — fall back to equal weights
+            # If all models failed, fall back to equal weights
             logger.warning("All composite scores are zero — using equal weights.")
             n = len(scores)
             return {m: round(1.0 / n, 6) for m in scores}
@@ -509,15 +500,15 @@ def compute_ensemble_weights(
     weights_raw = _normalise(raw_scores)
     weights_bc  = _normalise(bc_scores)
 
-    logger.info("\n  Pre-QDM weights (dynamical skill):")
+    logger.info("Pre-QDM weights (dynamical skill):")
     for m, w in weights_raw.items():
         logger.info(f"    {m:<15} S={raw_scores[m]:.4f}  w={w:.4f}")
 
-    logger.info("\n  Post-QDM weights (bias-corrected skill):")
+    logger.info("Post-QDM weights (bias-corrected skill):")
     for m, w in weights_bc.items():
         logger.info(f"    {m:<15} S={bc_scores[m]:.4f}  w={w:.4f}")
 
-    # ===== Save outputs =======================================================
+    # ===== Save outputs ====================
     output = {
         "raw": weights_raw,
         "bc":  weights_bc,
@@ -538,7 +529,7 @@ def compute_ensemble_weights(
         weights_path = results_dir / "ensemble_weights.json"
         with open(weights_path, "w") as fp:
             json.dump(output, fp, indent=2)
-        logger.info(f"\n  Weights saved -> {weights_path}")
+        logger.info(f"  Weights saved -> {weights_path}")
 
         metrics_path = results_dir / "ensemble_validation_metrics.csv"
         df = pd.DataFrame(all_rows)
@@ -557,7 +548,7 @@ def compute_ensemble_weights(
     return output
 
 
-# ===== Convenience accessors ==================================================
+# ===== Convenience accessors ====================
 
 def load_weights(
     results_dir: Path = DEFAULT_RESULTS_DIR,
@@ -612,14 +603,11 @@ def weighted_ensemble_std(
     """
     Compute the weighted inter-model standard deviation (uncertainty envelope).
 
-    Parameters
-    ----------
+    Parameters:
     per_model_arrays : dict mapping model name -> np.ndarray (same shape)
     weights          : dict mapping model name -> float weight
 
-    Returns
-    -------
-    np.ndarray of the weighted std (same shape as input arrays)
+    Returns np.ndarray of the weighted std (same shape as input arrays)
     """
     mean   = weighted_ensemble_mean(per_model_arrays, weights)
     models = list(per_model_arrays.keys())
@@ -630,7 +618,7 @@ def weighted_ensemble_std(
     return np.sqrt(var)
 
 
-# ===== Entry point ============================================================
+# ===== Entry point ====================
 
 if __name__ == "__main__":
     compute_ensemble_weights()
