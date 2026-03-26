@@ -68,9 +68,9 @@ Post-processing script that anchors Bols (1978) R-factor projections — as prod
 
 Daily-scale R-factor proxies (Bols 1978) systematically underestimate EI₃₀-based values because they cannot resolve within-storm intensity peaks.
 This bias is:
-  • Systematic  — consistent across all time periods
-  • Proportional — scales with the magnitude of R
-  • Well-documented in tropical literature (Vrieling et al. 2010; Panagos et al. 2017)
+1. Systematic, consistent across all time periods
+2. Proportional, scales with the magnitude of R
+3. Well-documented in tropical literature (Vrieling et al. 2010; Panagos et al. 2017)
 
 Because the bias is systematic, the relative climate change signal (future R / historical R) is unaffected. This applies a multiplicative scaling factor derived from GloREDa to correct absolute magnitudes while preserving the model-projected change signal:
 
