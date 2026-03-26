@@ -180,7 +180,7 @@ def process_scenario(
     return out_path
 
 
-# ===== CLI ======================================================================
+# ===== CLI ====================
 
 @click.command()
 @click.option(
@@ -239,34 +239,34 @@ def main(input_dir: str, output_dir: str, model: str, scenario: str, pr_var: str
     skipped   = []
 
     for mdl in models_to_run:
-        for scen in scenarios_to_run:
+        for scenario in scenarios_to_run:
             # Only process scenarios defined for this model
-            if scen not in MODELS[mdl]["scenarios"]:
-                logger.info(f"\nSkipping {mdl} / {scen} -- not in model scenario list.")
-                skipped.append((mdl, scen))
+            if scenario not in MODELS[mdl]["scenarios"]:
+                logger.info(f"\nSkipping {mdl} / {scenario} -- not in model scenario list.")
+                skipped.append((mdl, scenario))
                 continue
 
             logger.info(f"{'=' * 60}")
-            logger.info(f"Model: {mdl}  |  Scenario: {scen}")
+            logger.info(f"Model: {mdl}  |  Scenario: {scenario}")
             logger.info(f"{'=' * 60}")
 
             out = process_scenario(
                 input_dir  = input_path,
                 output_dir = output_path,
                 model      = mdl,
-                scenario   = scen,
+                scenario   = scenario,
                 pr_var     = pr_var,
             )
             if out:
-                completed.append((mdl, scen, out.name))
+                completed.append((mdl, scenario, out.name))
             else:
-                skipped.append((mdl, scen))
+                skipped.append((mdl, scenario))
 
-    logger.info("\n" + "=" * 60)
+    logger.info("=" * 60)
     logger.info(f"DONE -- {len(completed)} file(s) written, {len(skipped)} skipped")
     logger.info("=" * 60)
-    for mdl, scen, fname in completed:
-        logger.info(f"  OK  {mdl:<15} {scen:<12} -> {fname}")
+    for mdl, scenario, fname in completed:
+        logger.info(f"  OK  {mdl:<15} {scenario:<12} -> {fname}")
     if skipped:
         logger.info("Skipped (no files found or not in model list):")
         for item in skipped:
