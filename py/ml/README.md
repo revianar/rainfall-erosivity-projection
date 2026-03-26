@@ -80,6 +80,7 @@ Because the bias is systematic, the relative climate change signal (future R / h
 ## Outputs
 
 For each model × scenario:
+
 `R_bols_raw_{model}_{scenario}_{ensemble}.nc`       ← copy of RF output, unchanged
 `R_gloreda_scaled_{model}_{scenario}_{ensemble}.nc` ← scaled version
 
@@ -99,5 +100,6 @@ For each model × scenario:
   `R_bols_{model}_{scenario}_{ensemble}_jakarta.nc`
 
 Variable names expected inside each file:
+
 `R_bols          : raw Bols R-factor  [MJ·mm·ha⁻¹·h⁻¹·yr⁻¹]`
 `R_bols_weighted : weighted ensemble R (present if erosivity_rf.py ran ensemble aggregation), scaled separately if present`
