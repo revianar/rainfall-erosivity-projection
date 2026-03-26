@@ -17,6 +17,7 @@ residual distributional characteristics after QDM, so applying it to that model'
 Bols (1978) Indonesia calibration:
 
   `R = α × PRCPTOT^(1 - β) × Rx1day^β`
+  
   `R = 6.19 × PRCPTOT^0.24 × Rx1day^0.76`
 
 This is used as the *label* during training. The RF then learns to reproduce
@@ -75,6 +76,7 @@ This bias is:
 Because the bias is systematic, the relative climate change signal (future R / historical R) is unaffected. This applies a multiplicative scaling factor derived from GloREDa to correct absolute magnitudes while preserving the model-projected change signal:
 
 `scale_factor = R_GloREDa / R_Bols_historical_mean`
+
 `R_scaled(t)  = R_Bols(t) × scale_factor`
 
 ## Outputs
@@ -82,6 +84,7 @@ Because the bias is systematic, the relative climate change signal (future R / h
 For each model × scenario:
 
 `R_bols_raw_{model}_{scenario}_{ensemble}.nc`       ← copy of RF output, unchanged
+
 `R_gloreda_scaled_{model}_{scenario}_{ensemble}.nc` ← scaled version
 
 ## Usage
@@ -102,4 +105,5 @@ For each model × scenario:
 Variable names expected inside each file:
 
 `R_bols          : raw Bols R-factor  [MJ·mm·ha⁻¹·h⁻¹·yr⁻¹]`
+
 `R_bols_weighted : weighted ensemble R (present if erosivity_rf.py ran ensemble aggregation), scaled separately if present`
