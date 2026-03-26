@@ -22,21 +22,21 @@ MODELS = {
     "MRI-ESM2-0": {
         "ensemble":  "r1i1p1f1",
         "grid":      "gn",
-        "scenarios": ["ssp126", "ssp245", "ssp585"],
+        "scenarios": ["historical", "ssp126", "ssp245", "ssp585"],
     },
     "EC-Earth3": {
         "ensemble":  "r1i1p1f1",
         "grid":      "gr",
-        "scenarios": ["ssp126", "ssp245", "ssp585"],
+        "scenarios": ["historical", "ssp126", "ssp245", "ssp585"],
     },
     "CNRM-CM6-1": {
         "ensemble":  "r1i1p1f2",
         "grid":      "gr",
-        "scenarios": ["ssp126", "ssp245", "ssp585"],
+        "scenarios": ["historical", "ssp126", "ssp245", "ssp585"],
     },
 }
 
-ALL_SCENARIOS = ["ssp126", "ssp245", "ssp585"]
+ALL_SCENARIOS = ["historical", "ssp126", "ssp245", "ssp585"]
 
 CALIB_START = 1981
 CALIB_END   = 2014
@@ -49,7 +49,7 @@ N_QUANTILES   = 100          # quantile bins for QDM
 CHUNK_DAYS    = 365          # streaming chunk size
 
 
-# ===== QDM core ===============================================================
+# ===== QDM core ====================
 
 def fit_qdm_transfer(
     obs:        np.ndarray,
@@ -73,7 +73,7 @@ def fit_qdm_transfer(
     hist_wet = hist[hist >= threshold]
 
     if len(obs_wet) < 10 or len(hist_wet) < 10:
-        # Not enough wet days — return identity transfer
+        # If not enough wet days, return identity transfer
         fallback = np.linspace(0, max(obs.max(), hist.max(), 1), n_quantiles + 1)
         return {
             "obs_cdf":       fallback,
@@ -121,8 +121,8 @@ def apply_qdm(
     quantiles = transfer["quantiles"]
 
     # Step 1: dry-day frequency correction
-    ## If the model has more wet days than obs, demote the lightest wet days
-    ## to dry (zero) so the wet-day frequency matches observations.
+    # If the model has more wet days than obs, demote the lightest wet days to dry (zero)
+    # so the wet-day frequency matches observations.
     wet_mask = corrected >= threshold
     prob_obs  = transfer["wet_prob_obs"]
     prob_hist = transfer["wet_prob_hist"]
@@ -261,7 +261,7 @@ def apply_qdm_spatial(
     return da_corrected, transfers
 
 
-# ===== NetCDF4 streaming append ===============================================
+# ===== NetCDF4 streaming append ====================
 
 def _nc4_append(out_path: Path, data: np.ndarray, times, var_name: str) -> None:
     with nc4.Dataset(out_path, "a") as nc_out:
@@ -354,7 +354,7 @@ def merge_chirps_streaming(chirps_dir: Path, out_path: Path,
     logger.info(f"  Saved: {out_path.name}  ({total_days:,} days total)")
 
 
-# ===== Model file helpers =====================================================
+# ===== Model file helpers ====================
 
 def load_model_lazy(fpath: Path, label: str) -> xr.Dataset:
     logger.info(f"  Loading [{label}]: {fpath.name}")
@@ -415,7 +415,7 @@ def save_model_streaming(ds: xr.Dataset, out_path: Path, label: str,
     logger.info(f"    mean={mean:.2f} mm/day  max={pr_max:.2f} mm/day")
 
 
-# ===== CLI 'prepare' subcommand =====================================================
+# ===== CLI 'prepare' subcommand ====================
 
 @click.group()
 def cli():
@@ -470,8 +470,8 @@ def prepare(chirps_dir, processed_dir, output_dir, model, chirps_start, chirps_e
         logger.info(f"Model: {mdl}  (ensemble={cfg['ensemble']}  grid={cfg['grid']})")
         logger.info(f"{'=' * 50}")
 
-        for scen in ["historical"] + cfg["scenarios"]:
-            pattern  = f"pr_day_{mdl}_{scen}_{cfg['ensemble']}_jakarta.nc"
+        for scenario in ["historical"] + cfg["scenarios"]:
+            pattern  = f"pr_day_{mdl}_{scenario}_{cfg['ensemble']}_jakarta.nc"
             src_file = proc_path / pattern
 
             if not src_file.exists():
@@ -485,8 +485,8 @@ def prepare(chirps_dir, processed_dir, output_dir, model, chirps_start, chirps_e
 
             # Load, validate, and re-save into bias_corrected/ with compression
             logger.info(f"  Copying: {pattern}")
-            ds = load_model_lazy(src_file, f"{mdl}/{scen}")
-            save_model_streaming(ds, dst_file, f"{mdl}/{scen}")
+            ds = load_model_lazy(src_file, f"{mdl}/{scenario}")
+            save_model_streaming(ds, dst_file, f"{mdl}/{scenario}")
 
     logger.info("=" * 50)
     logger.info("prepare DONE — files in bias_corrected/:")
@@ -499,7 +499,7 @@ def prepare(chirps_dir, processed_dir, output_dir, model, chirps_start, chirps_e
     )
 
 
-# ===== Apply: core per-model-per-scenario =====================================
+# ===== Apply: core per-model-per-scenario ====================
 
 def _run_qdm(
     model:       str,
@@ -635,7 +635,7 @@ def _run_qdm(
     return True
 
 
-# ===== CLI 'apply' subcommand =======================================================
+# ===== CLI 'apply' subcommand ====================
 
 @cli.command("apply")
 @click.option("--model",    default="all",
@@ -661,38 +661,38 @@ def apply(model, scenario, output_dir, calib_start, calib_end, save_transfer):
     failed    = []
 
     for mdl in models_to_run:
-        for scen in scenarios_to_run:
-            if scen not in MODELS[mdl]["scenarios"]:
-                logger.info(f"Skipping {mdl}/{scen} — not in model scenario list")
+        for scenario in scenarios_to_run:
+            if scenario not in MODELS[mdl]["scenarios"]:
+                logger.info(f"Skipping {mdl}/{scenario} — not in model scenario list")
                 continue
 
-            logger.info(f"\n{'#' * 55}")
-            logger.info(f"# Model: {mdl}  |  Scenario: {scen}")
+            logger.info(f"{'#' * 55}")
+            logger.info(f"# Model: {mdl}  |  Scenario: {scenario}")
             logger.info(f"{'#' * 55}")
 
             ok = _run_qdm(
                 model       = mdl,
-                scenario    = scen,
+                scenario    = scenario,
                 output_path = output_path,
                 calib_start = calib_start,
                 calib_end   = calib_end,
                 save_tf     = save_transfer,
             )
             if ok:
-                completed.append((mdl, scen))
+                completed.append((mdl, scenario))
             else:
-                failed.append((mdl, scen))
+                failed.append((mdl, scenario))
 
-    logger.info("\n" + "=" * 55)
-    logger.info(f"ALL DONE — {len(completed)} completed, {len(failed)} failed")
     logger.info("=" * 55)
-    for mdl, scen in completed:
-        out = Path(output_dir) / f"pr_day_{mdl}_{scen}_{MODELS[mdl]['ensemble']}_jakarta_qdm.nc"
-        logger.info(f"  OK  {mdl:<15} {scen:<10} -> {out.name}")
+    logger.info(f"DONE — {len(completed)} completed, {len(failed)} failed")
+    logger.info("=" * 55)
+    for mdl, scenario in completed:
+        out = Path(output_dir) / f"pr_day_{mdl}_{scenario}_{MODELS[mdl]['ensemble']}_jakarta_qdm.nc"
+        logger.info(f"  OK  {mdl:<15} {scenario:<10} -> {out.name}")
     if failed:
         logger.warning("Failed:")
-        for mdl, scen in failed:
-            logger.warning(f"  !! {mdl:<15} {scen}")
+        for mdl, scenario in failed:
+            logger.warning(f"  !! {mdl:<15} {scenario}")
 
 
 if __name__ == "__main__":
