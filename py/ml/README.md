@@ -25,13 +25,13 @@ among indices that the analytic formula cannot express.
 
 Feature set
 -----------
-    PRCPTOT   Annual total wet-day precipitation  [mm/yr]
-    Rx1day    Annual maximum 1-day precipitation  [mm]
-    Rx3day    Annual maximum 3-day precipitation  [mm]
-    Rx5day    Annual maximum 5-day precipitation  [mm]
-    WDF       Annual wet-day frequency            [days/yr]
-    SDII      Simple daily intensity index        [mm/wet-day]
-    SPI12_mean  Annual mean of monthly SPI-12     [dimensionless]
+    PRCPTOT     Annual total wet-day precipitation  [mm/yr]
+    Rx1day      Annual maximum 1-day precipitation  [mm]
+    Rx3day      Annual maximum 3-day precipitation  [mm]
+    Rx5day      Annual maximum 5-day precipitation  [mm]
+    WDF         Annual wet-day frequency            [days/yr]
+    SDII        Simple daily intensity index        [mm/wet-day]
+    SPI12_mean  Annual mean of monthly SPI-12       [dimensionless]
 
 SPI12_mean captures the multi-month accumulated moisture deficit signal not
 fully expressed by annual totals — physically relevant because prolonged dry
