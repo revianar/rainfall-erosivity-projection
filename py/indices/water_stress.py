@@ -409,7 +409,6 @@ def compute_spi(pr_monthly: xr.DataArray, scale: int = 12) -> xr.DataArray:
       < -2.0  Extreme drought
       > +2.0  Extreme wet
     """
-    logger.info(f"  Computing SPI-{scale}...")
 
     # Rolling accumulation along time
     pr_accum = pr_monthly.rolling(time=scale, center=False, min_periods=scale).sum()
