@@ -1,3 +1,10 @@
+'''
+To run the full QDM bias correction workflow in the terminal:
+1. Run QDM.py prepare
+2. Run QDM.py apply --model all --scenario all 
+'''
+
+
 import sys
 import numpy as np
 import xarray as xr
@@ -666,9 +673,7 @@ def apply(model, scenario, output_dir, calib_start, calib_end, save_transfer):
                 logger.info(f"Skipping {mdl}/{scenario} — not in model scenario list")
                 continue
 
-            logger.info(f"{'#' * 55}")
-            logger.info(f"# Model: {mdl}  |  Scenario: {scenario}")
-            logger.info(f"{'#' * 55}")
+            logger.info(f" Model: {mdl}  |  Scenario: {scenario}")
 
             ok = _run_qdm(
                 model       = mdl,
@@ -683,7 +688,7 @@ def apply(model, scenario, output_dir, calib_start, calib_end, save_transfer):
             else:
                 failed.append((mdl, scenario))
 
-    logger.info("=" * 55)
+    logger.info(f"\n{'=' * 55}")
     logger.info(f"DONE — {len(completed)} completed, {len(failed)} failed")
     logger.info("=" * 55)
     for mdl, scenario in completed:
