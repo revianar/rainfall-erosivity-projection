@@ -132,7 +132,7 @@ Validation uses 5-fold cross-validation (CV R², RMSE) and OOB R².
 ### 8. GloREDa Scaling
 The RF R-factor output is anchored to the **GloREDa** observed present-day erosivity (Panagos et al. 2017) via **multiplicative scaling (Option B)**:
 
-$$\text{scale\_factor} = \frac{R_{\text{GloREDa}}}{{\overline{R_{\text{Bols, hist}}}}}$$
+`\text{scale\_factor} = \frac{R_{\text{GloREDa}}}{{\overline{R_{\text{Bols, hist}}}}}`
 
 This preserves the relative change signal exactly while giving physically interpretable absolute magnitudes. The historical scaled mean equals GloREDa by construction — it is not an independent validation. The scientifically meaningful output is the **relative change**, not the absolute future magnitude.
 
