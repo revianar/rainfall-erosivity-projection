@@ -44,3 +44,8 @@ Variable names expected inside each file:
 `R_bols          : raw Bols R-factor  [MJ·mm·ha⁻¹·h⁻¹·yr⁻¹]`
 
 `R_bols_weighted : weighted ensemble R (present if erosivity_rf.py ran ensemble aggregation), scaled separately if present`
+
+## References
+
+Bols, P. (1978). The Iso-Erodent Map of Java and Madura. Belgian Technical Assistance Project ATA 105. Soil Research Institute.
+Panagos et al. (2017). *Global rainfall erosivity assessment based on high-temporal resolution rainfall records.* Scientific Reports, 7, 4175.
