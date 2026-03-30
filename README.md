@@ -363,15 +363,15 @@ It does **not** explicitly model:
 
 ## Citation
 
-- **CHIRPS:** Funk et al. (2015). *The climate hazards infrared precipitation with stations — a new environmental record for monitoring extremes.* Scientific Data, 2, 150066. https://doi.org/10.1038/sdata.2015.66
-- **GloREDa:** Panagos et al. (2017). *Global rainfall erosivity assessment based on high-temporal resolution rainfall records.* Scientific Reports, 7, 4175. https://doi.org/10.1038/s41598-017-04282-8
-- **Bols (1978):** Bols, P.L. (1978). *The iso-erodent map of Java and Madura.* Belgian Technical Assistance Project ATA 105, Soil Research Institute, Bogor.
-- **QDM:** Cannon, A.J., Sobie, S.R., & Murdock, T.Q. (2015). *Bias correction of GCM precipitation by quantile mapping: How well do methods preserve changes in quantiles and extremes?* Journal of Climate, 28(17), 6938–6959. https://doi.org/10.1175/JCLI-D-14-00754.1
-- **Ensemble weighting:** Knutti, R., Sedláček, J., Sanderson, B.M., Lorenz, R., Fischer, E.M., & Eyring, V. (2017). *A climate model projection weighting scheme accounting for performance and interdependence.* Geophysical Research Letters, 44(4), 1909–1918. https://doi.org/10.1002/2016GL072012
-- **MRI-ESM2-0:** Yukimoto et al. (2019). *The Meteorological Research Institute Earth System Model Version 2.0, MRI-ESM2.0: Description and Basic Evaluation of the Physical Component.* Journal of the Meteorological Society of Japan, 97(5), 931–965. https://doi.org/10.2151/jmsj.2019-051
-- **EC-Earth3:** Döscher et al. (2022). *The EC-Earth3 Earth system model for the Coupled Model Intercomparison Project 6.* Geoscientific Model Development, 15, 2973–3020. https://doi.org/10.5194/gmd-15-2973-2022
-- **CNRM-CM6-1:** Voldoire et al. (2019). *Evaluation of CMIP6 DECK Experiments With CNRM-CM6-1.* Journal of Advances in Modeling Earth Systems, 11(7), 2177–2213. https://doi.org/10.1029/2019MS001683
-- **Vrieling et al. (2010):** Vrieling, A., Sterk, G., & de Jong, S.M. (2010). *Satellite-based estimation of rainfall erosivity for Africa.* Journal of Hydrology, 395(3–4), 235–241. https://doi.org/10.1016/j.jhydrol.2010.10.035
+- **CHIRPS:** Funk et al. (2015). The climate hazards infrared precipitation with stations — a new environmental record for monitoring extremes. *Scientific Data*, 2, 150066. https://doi.org/10.1038/sdata.2015.66
+- **GloREDa:** Panagos et al. (2017). Global rainfall erosivity assessment based on high-temporal resolution rainfall records. *Scientific Reports*, 7, 4175. https://doi.org/10.1038/s41598-017-04282-8
+- **Bols (1978):** Bols, P.L. (1978). *The iso-erodent map of Java and Madura*. Belgian Technical Assistance Project ATA 105, Soil Research Institute, Bogor.
+- **QDM:** Cannon, A.J., Sobie, S.R., & Murdock, T.Q. (2015). *ias correction of GCM precipitation by quantile mapping: How well do methods preserve changes in quantiles and extremes? *Journal of Climate*, 28(17), 6938–6959. https://doi.org/10.1175/JCLI-D-14-00754.1
+- **Ensemble weighting:** Knutti, R., Sedláček, J., Sanderson, B.M., Lorenz, R., Fischer, E.M., & Eyring, V. (2017). A climate model projection weighting scheme accounting for performance and interdependence. *Geophysical Research Letters*, 44(4), 1909–1918. https://doi.org/10.1002/2016GL072012
+- **MRI-ESM2-0:** Yukimoto et al. (2019). The Meteorological Research Institute Earth System Model Version 2.0, MRI-ESM2.0: Description and Basic Evaluation of the Physical Component. *Journal of the Meteorological Society of Japan*, 97(5), 931–965. https://doi.org/10.2151/jmsj.2019-051
+- **EC-Earth3:** Döscher et al. (2022). The EC-Earth3 Earth system model for the Coupled Model Intercomparison Project 6. *Geoscientific Model Development*, 15, 2973–3020. https://doi.org/10.5194/gmd-15-2973-2022
+- **CNRM-CM6-1:** Voldoire et al. (2019). Evaluation of CMIP6 DECK Experiments With CNRM-CM6-1. *Journal of Advances in Modeling Earth Systems*, 11(7), 2177–2213. https://doi.org/10.1029/2019MS001683
+- **Vrieling et al. (2010):** Vrieling, A., Sterk, G., & de Jong, S.M. (2010). Satellite-based estimation of rainfall erosivity for Africa. *Journal of Hydrology*, 395(3–4), 235–241. https://doi.org/10.1016/j.jhydrol.2010.10.035
 
 ---
 
