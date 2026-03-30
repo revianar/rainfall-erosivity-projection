@@ -47,5 +47,5 @@ Variable names expected inside each file:
 
 ## References
 
-Bols, P. (1978). The Iso-Erodent Map of Java and Madura. Belgian Technical Assistance Project ATA 105. Soil Research Institute.
-Panagos et al. (2017). *Global rainfall erosivity assessment based on high-temporal resolution rainfall records.* Scientific Reports, 7, 4175.
+- Bols, P. (1978). The Iso-Erodent Map of Java and Madura. Belgian Technical Assistance Project ATA 105. Soil Research Institute.
+- Panagos et al. (2017). *Global rainfall erosivity assessment based on high-temporal resolution rainfall records.* Scientific Reports, 7, 4175.
