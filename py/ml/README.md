@@ -57,6 +57,6 @@ Figures (results/figures/):
 
 ## References
 
-- Bols, P. (1978). The Iso-Erodent Map of Java and Madura. Belgian Technical Assistance Project ATA 105. Soil Research Institute.
+- Bols, P. (1978). The Iso-Erodent Map of Java and Madura. Belgian Technical Assistance Project ATA 105. *Soil Research Institute.*
 
-- Knutti, R., J.Sedláček, B. M.Sanderson, R.Lorenz, E. M.Fischer, and V.Eyring (2017), A climate model projection weighting scheme accounting for performance and interdependence, Geophys. Res. Lett., 44, 1909–1918, doi:10.1002/2016GL072012.
+- Knutti, R., J.Sedláček, B. M.Sanderson, R.Lorenz, E. M.Fischer, and V.Eyring (2017), A climate model projection weighting scheme accounting for performance and interdependence, *Geophys. Res. Lett.*, 44, 1909–1918.
