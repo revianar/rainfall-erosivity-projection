@@ -15,7 +15,7 @@ The study quantifies how climate change may alter the erosive power of rainfall 
 | **Historical period** | 1950–2014 |
 | **Near-term projection** | 2021–2050 |
 | **Far-term projection** | 2071–2100 |
-| **Scenarios** | SSP1-2.6 · SSP2-4.5 · SSP5-8.5 |
+| **Scenarios** | SSP1-2.6, SSP2-4.5, SSP5-8.5 |
 | **GCM resolution** | ~1–2° |
 
 ## Models
@@ -110,7 +110,7 @@ A Random Forest regressor is trained **per model** on that model's own QDM-corre
 
 $$R = 6.19 \times PRCPTOT^{0.76} \times \left(\frac{Rx1day}{SDII}\right)^{0.1}$$
 
-**Feature set:** PRCPTOT · Rx1day · Rx3day · Rx5day · WDF · SDII · SPI12_mean (if available)
+**Feature set:** PRCPTOT, Rx1day, Rx3day, Rx5day, WDF, SDII, SPI12_mean (if available)
 
 **Hyperparameters:**
 
