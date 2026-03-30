@@ -214,11 +214,11 @@ Headline R-factor change results (GloREDa-scaled, spatially averaged, far-term 2
 
 ```
 > Jupyter Notebook/                        ← DATA_ROOT
-  > CMIP6/                               ← Raw CMIP6 NetCDF files
+  > CMIP6/                                 ← Raw CMIP6 NetCDF files
     > pr_day_{model}_{scenario}_{ensemble}_{grid}_{start}-{end}.nc
-> CHIRPS/                              ← Raw CHIRPS v2.0 daily files
+> CHIRPS/                                  ← Raw CHIRPS v2.0 daily files
 > GloREDa/
-  > GlobalR_NoPol.tif                ← GloREDa global erosivity raster
+  > GlobalR_NoPol.tif                      ← GloREDa global erosivity raster
     > Rainfall-Erosivity/                  ← PROJECT_ROOT
       > py/
         > crop_domain/
@@ -236,17 +236,17 @@ Headline R-factor change results (GloREDa-scaled, spatially averaged, far-term 2
         > postprocessing/
           > GloREDa_scaling.py
         > data/
-          > processed/               ← crop_domain.py output
-          > bias_corrected/          ← QDM.py output + CHIRPS file
+          > processed/                     ← crop_domain.py output
+          > bias_corrected/                ← QDM.py output + CHIRPS file
         > results/
-          > indices/                 ← ETCCDI index NetCDFs
-          > water_stress/            ← Water stress NetCDFs
-          > extreme_freq/            ← GEV return level NetCDFs
-          > models/                  ← RF .pkl files
-          > erosivity/               ← R_bols NetCDFs
+          > indices/                       ← ETCCDI index NetCDFs
+          > water_stress/                  ← Water stress NetCDFs
+          > extreme_freq/                  ← GEV return level NetCDFs
+          > models/                        ← RF .pkl files
+          > erosivity/                     ← R_bols NetCDFs
           > erosivity_scaled/
-            > raw/                 ← Unscaled R_bols copies
-            > scaled/              ← GloREDa-scaled R_gloreda NetCDFs
+            > raw/                         ← Unscaled R_bols copies
+            > scaled/                      ← GloREDa-scaled R_gloreda NetCDFs
           > figures/
           > tables/
             > ensemble_weights.json
