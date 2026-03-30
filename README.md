@@ -1,8 +1,8 @@
-# Projected Changes in Rainfall Erosivity Under CMIP6 SSP Scenarios — DKI Jakarta, Indonesia
+# Projected Changes in Rainfall Erosivity Under CMIP6 SSP Scenarios
 
 ## Overview
 
-This repository contains the full analysis workflow for projecting future changes in rainfall erosivity (R-factor) over the Special Capital Region of Jakarta (DKI Jakarta), Indonesia, under three Shared Socioeconomic Pathway scenarios using bias-corrected multi-model CMIP6 precipitation simulations.
+This repository contains the full analysis workflow for projecting future changes in rainfall erosivity (R-factor) over the Special Capital Region of Jakarta (DKI Jakarta), Indonesia, under three Shared Socioeconomic Pathway (SSP) scenarios using bias-corrected multi-model CMIP6 precipitation simulations.
 
 The study quantifies how climate change may alter the erosive power of rainfall over Jakarta's greater capital region through 2100, with implications for urban soil erosion risk, sediment loading in flood infrastructure, and land degradation in the Jabodetabek area. The R-factor is estimated using the **Bols (1978) Indonesia-specific calibration** and refined through a **Random Forest regression** trained on ETCCDI precipitation indices. Absolute magnitudes are anchored to the **GloREDa global erosivity dataset** via multiplicative scaling.
 
