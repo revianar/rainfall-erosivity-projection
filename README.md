@@ -179,7 +179,7 @@ python py/postprocessing/GloREDa_scaling.py --model all --scenario all
 | `py/notebooks/QDM.ipynb` | Pre-correction bias assessment, QDM transfer function demo, post-correction QQ-plots and annual cycle validation |
 | `py/notebooks/03_precipitation_indices.ipynb` | ETCCDI index spatial maps, time series at Jakarta centre cell, change signal maps, period-mean summary tables |
 | `py/notebooks/04_water_stress.ipynb` | Aridity Index maps, SPI-12 time series, water-stressed months, moisture deficit change maps |
-| `py/notebooks/05_extreme_frequency_analysis.ipynb` | GEV fitting, QQ-plots, return level curves, flood threshold exceedance probabilities, spatial return level maps |
+| `py/notebooks/05_extreme_frequency.ipynb` | GEV fitting, QQ-plots, return level curves, flood threshold exceedance probabilities, spatial return level maps |
 | `py/notebooks/06_erosivity_ml.ipynb` | RF training metrics, feature importances, GloREDa-scaled R-factor time series, weighted ensemble projections, headline % change results |
 
 Kernel: `Python (jakarta-rainfall)` (see Requirements below).
