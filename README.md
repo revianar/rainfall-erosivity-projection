@@ -105,7 +105,7 @@ GEV distributions are fitted by MLE to Annual Maximum Series (AMS) of Rx1day, Rx
 
 > **Note on degenerate fits:** CNRM-CM6-1 Rx3day produces GEV shape parameters near ξ = −1 due to extreme outliers in its 360-day calendar AMS, causing physically implausible return levels (> 5,000 mm). These fits are flagged and excluded from the analysis with full transparency.
 
-### 7. Random Forest Erosivity (Interpretation C — Per-Model Training)
+### 7. Random Forest Erosivity (Per-Model Training)
 A Random Forest regressor is trained **per model** on that model's own QDM-corrected historical indices, with the **Bols (1978) R-proxy** as the training target. Each model's RF is applied exclusively to that model's own future projections, avoiding cross-model contamination of the climate change signal.
 
 $$R = 6.19 \times PRCPTOT^{0.76} \times \left(\frac{Rx1day}{SDII}\right)^{0.1}$$
