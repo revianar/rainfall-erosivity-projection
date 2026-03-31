@@ -932,7 +932,7 @@ def main(
     for mdl in models_to_run:
         ensemble = MODELS[mdl]["ensemble"]
         logger.info(f"{'=' * 60}")
-        logger.info(f"STEP 1–3: Model = {mdl}")
+        logger.info(f"STEP 1–5: Model = {mdl}")
         logger.info(f"{'=' * 60}")
 
         # Load historical indices for training
