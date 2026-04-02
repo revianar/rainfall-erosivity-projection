@@ -208,6 +208,13 @@ Headline R-factor change results (GloREDa-scaled, spatially averaged, far-term 2
 
 *Run notebook 06 to populate the headline results after executing all scripts.*
 
+**Statistical significance (Mann-Whitney U, far-future vs historical):**
+- SSP5-8.5: 2 of 3 models significant at α = 0.05 for R-factor change
+- SSP1-2.6 and SSP2-4.5: no model significant because inter-annual variability dominates
+- Non-significant results are physically expected given ~30 far-future years and Jakarta's ±10–20% inter-annual R variability; they indicate insufficient statistical power, not absence of change
+- Bootstrap 95% CIs are provided on all % change estimates (2000 resamples)
+- Multiple comparison note: with 9 simultaneous tests (3 SSPs × 3 models), Bonferroni-corrected threshold is α = 0.006
+
 ---
 
 ## File & Directory Structure
