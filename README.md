@@ -79,7 +79,7 @@ Multi-metric NMAE skill scoring is used to derive performance-based ensemble wei
 | WDF | 0.15 | Wet/dry partitioning shapes all intensity metrics |
 | Seasonal correlation | 0.15 | Monsoon phase skill; critical for physical plausibility |
 
-Weights are normalised to sum to 1. Post-QDM (BC) weights are all ≈ 0.333 by construction — QDM forces CDF convergence during calibration, making the BC weights uninformative. Downstream aggregation uses the **pre-QDM (`raw`) weights** following Knutti et al. (2017).
+Weights are normalised to sum to 1. Post-QDM (BC) weights are all ≈ 0.333 by construction because QDM forces CDF convergence during calibration, making the BC weights uninformative. Downstream aggregation uses the **pre-QDM (`raw`) weights** following Knutti et al. (2017).
 
 ### 4. ETCCDI Precipitation Indices
 Six indices are computed annually from QDM-corrected daily precipitation using explicit year-loop groupby (cftime-safe; `.resample()` is never used):
@@ -108,9 +108,9 @@ GEV distributions are fitted by MLE to Annual Maximum Series (AMS) of Rx1day, Rx
 ### 7. Random Forest Erosivity (Per-Model Training)
 A Random Forest regressor is trained **per model** on that model's own QDM-corrected historical indices, with the **Bols (1978) R-proxy** as the training target. Each model's RF is applied exclusively to that model's own future projections, avoiding cross-model contamination of the climate change signal.
 
-$$R = 6.19 \times PRCPTOT^{0.76} \times \left(\frac{Rx1day}{SDII}\right)^{0.1}$$
+$$R = 6.19 \times PRCPTOT^{0.76}$$
 
-**Feature set:** PRCPTOT, Rx1day, Rx3day, Rx5day, WDF, SDII, SPI12_mean (if available)
+**Feature set:** PPRCPTOT, Rx1day, Rx3day, Rx5day, WDF, SDII, SPI12_mean
 
 **Hyperparameters:**
 
@@ -130,11 +130,11 @@ Validation uses 5-fold cross-validation (CV R², RMSE) and OOB R².
 > **Note on the EI₃₀ proxy:** True EI₃₀ requires sub-hourly rainfall intensity, which is not resolvable from daily CMIP6 output. The Bols daily proxy is defensible because the bias relative to GloREDa is systematic and cancels in relative change analysis (Vrieling et al. 2010).
 
 ### 8. GloREDa Scaling
-The RF R-factor output is anchored to the **GloREDa** observed present-day erosivity (Panagos et al. 2017) via **multiplicative scaling (Option B)**:
+The RF R-factor output is anchored to the **GloREDa** observed present-day erosivity (Panagos et al. 2017) via **multiplicative scaling**:
 
 `\text{scale\_factor} = \frac{R_{\text{GloREDa}}}{{\overline{R_{\text{Bols, hist}}}}}`
 
-This preserves the relative change signal exactly while giving physically interpretable absolute magnitudes. The historical scaled mean equals GloREDa by construction — it is not an independent validation. The scientifically meaningful output is the **relative change**, not the absolute future magnitude.
+This preserves the relative change signal exactly while giving physically interpretable absolute magnitudes. The historical scaled mean equals GloREDa by construction, so it is not an independent validation. The scientifically meaningful output is the **relative change**, not the absolute future magnitude.
 
 ---
 
